@@ -118,6 +118,17 @@ func (m *Model) PrevPlugin() {
 	m.SetActivePlugin(idx)
 }
 
+// FocusPluginByID switches to a plugin by its ID.
+func (m *Model) FocusPluginByID(id string) {
+	plugins := m.registry.Plugins()
+	for i, p := range plugins {
+		if p.ID() == id {
+			m.SetActivePlugin(i)
+			return
+		}
+	}
+}
+
 // ShowToast displays a temporary status message.
 func (m *Model) ShowToast(msg string, duration time.Duration) {
 	m.statusMsg = msg

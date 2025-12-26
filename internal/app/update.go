@@ -106,6 +106,15 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		idx := int(msg.Runes[0] - '1')
 		m.SetActivePlugin(idx)
 		return m, nil
+	case "g":
+		m.FocusPluginByID("git-status")
+		return m, nil
+	case "t":
+		m.FocusPluginByID("td-monitor")
+		return m, nil
+	case "c":
+		m.FocusPluginByID("conversations")
+		return m, nil
 	}
 
 	// Toggles

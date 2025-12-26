@@ -134,17 +134,32 @@ var (
 			Bold(true)
 )
 
-// Tab bar styles
+// Bar element styles (shared by header/footer)
 var (
-	TabActive = lipgloss.NewStyle().
+	BarTitle = lipgloss.NewStyle().
 			Foreground(TextPrimary).
-			Background(Primary).
-			Padding(0, 2).
 			Bold(true)
 
-	TabInactive = lipgloss.NewStyle().
-			Foreground(TextSecondary).
-			Padding(0, 2)
+	BarText = lipgloss.NewStyle().
+		Foreground(TextMuted)
+
+	BarChip = lipgloss.NewStyle().
+			Foreground(TextMuted).
+			Background(BgTertiary).
+			Padding(0, 1)
+
+	BarChipActive = lipgloss.NewStyle().
+			Foreground(TextPrimary).
+			Background(Primary).
+			Padding(0, 1).
+			Bold(true)
+)
+
+// Tab bar styles (using bar element primitives)
+var (
+	TabActive = BarChipActive.Padding(0, 2)
+
+	TabInactive = BarChip.Padding(0, 2)
 )
 
 // Diff line styles

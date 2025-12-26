@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	headerHeight = 1
+	headerHeight = 2 // header line + spacing
 	footerHeight = 1
 	minWidth     = 80
 	minHeight    = 24
@@ -38,6 +38,7 @@ func (m Model) View() string {
 	// Header
 	b.WriteString(m.renderHeader())
 	b.WriteString("\n")
+	b.WriteString("\n") // spacing between header and content
 
 	// Main content
 	content := m.renderContent(m.width, contentHeight)
@@ -63,7 +64,7 @@ func (m Model) View() string {
 // renderHeader renders the top bar with title, tabs, and clock.
 func (m Model) renderHeader() string {
 	// Title
-	title := styles.Header.Render(" Agent Sidecar ")
+	title := styles.BarTitle.Render(" Sidecar ")
 
 	// Plugin tabs
 	plugins := m.registry.Plugins()
@@ -83,7 +84,7 @@ func (m Model) renderHeader() string {
 	tabBar := strings.Join(tabs, "")
 
 	// Clock
-	clock := styles.Muted.Render(m.ui.Clock.Format("15:04"))
+	clock := styles.BarText.Render(m.ui.Clock.Format("15:04"))
 
 	// Calculate spacing
 	titleWidth := lipgloss.Width(title)
