@@ -1,8 +1,8 @@
 package tdmonitor
 
 import (
+	"log/slog"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/sst/sidecar/internal/plugin"
@@ -12,9 +12,6 @@ func TestNew(t *testing.T) {
 	p := New()
 	if p == nil {
 		t.Fatal("expected non-nil plugin")
-	}
-	if p.activeList != "ready" {
-		t.Errorf("expected activeList 'ready', got %q", p.activeList)
 	}
 }
 
@@ -42,15 +39,9 @@ func TestPluginIcon(t *testing.T) {
 func TestFocusContext(t *testing.T) {
 	p := New()
 
-	// Default view
+	// Without model, should return default
 	if ctx := p.FocusContext(); ctx != "td-monitor" {
 		t.Errorf("expected context 'td-monitor', got %q", ctx)
-	}
-
-	// Detail view
-	p.showDetail = true
-	if ctx := p.FocusContext(); ctx != "td-detail" {
-		t.Errorf("expected context 'td-detail', got %q", ctx)
 	}
 }
 
@@ -67,76 +58,7 @@ func TestDiagnosticsNoDatabase(t *testing.T) {
 	}
 }
 
-func TestActiveListData(t *testing.T) {
-	p := New()
-	p.inProgress = []Issue{{ID: "1", Title: "In Progress"}}
-	p.ready = []Issue{{ID: "2", Title: "Ready"}}
-	p.reviewable = []Issue{{ID: "3", Title: "Reviewable"}}
-
-	// Default is ready
-	list := p.activeListData()
-	if len(list) != 1 || list[0].ID != "2" {
-		t.Error("expected ready list")
-	}
-
-	// Switch to in_progress
-	p.activeList = "in_progress"
-	list = p.activeListData()
-	if len(list) != 1 || list[0].ID != "1" {
-		t.Error("expected in_progress list")
-	}
-
-	// Switch to reviewable
-	p.activeList = "reviewable"
-	list = p.activeListData()
-	if len(list) != 1 || list[0].ID != "3" {
-		t.Error("expected reviewable list")
-	}
-}
-
-func TestWrapText(t *testing.T) {
-	tests := []struct {
-		text     string
-		maxWidth int
-		expected int
-	}{
-		{"hello world", 20, 1},
-		{"hello world this is a longer text", 10, 5},
-		{"", 10, 0},
-		{"line one\nline two", 50, 2},
-	}
-
-	for _, tt := range tests {
-		lines := wrapText(tt.text, tt.maxWidth)
-		if len(lines) != tt.expected {
-			t.Errorf("wrapText(%q, %d) = %d lines, expected %d",
-				tt.text, tt.maxWidth, len(lines), tt.expected)
-		}
-	}
-}
-
-func TestStatusBadge(t *testing.T) {
-	tests := []struct {
-		status   string
-		expected string
-	}{
-		{"open", "open"},
-		{"in_progress", "in_progress"},
-		{"in_review", "in_review"},
-		{"done", "done"},
-		{"unknown", "unknown"},
-	}
-
-	for _, tt := range tests {
-		result := statusBadge(tt.status)
-		// Just check that it contains the status text
-		if !contains(result, tt.expected) {
-			t.Errorf("statusBadge(%q) should contain %q", tt.status, tt.expected)
-		}
-	}
-}
-
-func TestFormatIssueCount(t *testing.T) {
+func TestFormatCount(t *testing.T) {
 	tests := []struct {
 		count    int
 		expected string
@@ -148,22 +70,19 @@ func TestFormatIssueCount(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := formatIssueCount(tt.count)
+		result := formatCount(tt.count, "issue", "issues")
 		if result != tt.expected {
-			t.Errorf("formatIssueCount(%d) = %q, expected %q",
+			t.Errorf("formatCount(%d) = %q, expected %q",
 				tt.count, result, tt.expected)
 		}
 	}
-}
-
-func contains(s, substr string) bool {
-	return strings.Contains(s, substr)
 }
 
 func TestInitWithNonExistentDatabase(t *testing.T) {
 	p := New()
 	ctx := &plugin.Context{
 		WorkDir: "/nonexistent/path",
+		Logger:  slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	}
 
 	// Init should NOT return an error even if database doesn't exist
@@ -173,12 +92,12 @@ func TestInitWithNonExistentDatabase(t *testing.T) {
 		t.Errorf("Init should not return error for missing database, got: %v", err)
 	}
 
-	// Plugin should still be usable
+	// Plugin should still be usable but model should be nil
 	if p.ctx == nil {
 		t.Error("context should be set")
 	}
-	if p.data == nil {
-		t.Error("data provider should be created")
+	if p.model != nil {
+		t.Error("model should be nil when database not found")
 	}
 }
 
@@ -206,6 +125,7 @@ func TestInitWithValidDatabase(t *testing.T) {
 	p := New()
 	ctx := &plugin.Context{
 		WorkDir: projectRoot,
+		Logger:  slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	}
 
 	err = p.Init(ctx)
@@ -213,10 +133,13 @@ func TestInitWithValidDatabase(t *testing.T) {
 		t.Errorf("Init failed: %v", err)
 	}
 
-	// Check if we can detect the database exists
-	if p.data == nil || p.data.db == nil {
-		t.Error("Database connection should be established")
+	// Check if model was created
+	if p.model == nil {
+		t.Error("model should be created when database exists")
 	}
+
+	// Cleanup
+	p.Stop()
 }
 
 func TestDiagnosticsWithDatabase(t *testing.T) {
@@ -242,8 +165,10 @@ func TestDiagnosticsWithDatabase(t *testing.T) {
 	p := New()
 	ctx := &plugin.Context{
 		WorkDir: projectRoot,
+		Logger:  slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	}
 	p.Init(ctx)
+	defer p.Stop()
 
 	diags := p.Diagnostics()
 	if len(diags) != 1 {
@@ -253,5 +178,42 @@ func TestDiagnosticsWithDatabase(t *testing.T) {
 	// With database, status should be "ok"
 	if diags[0].Status != "ok" {
 		t.Errorf("expected status 'ok' with database, got %q", diags[0].Status)
+	}
+}
+
+func TestRenderNoDatabase(t *testing.T) {
+	result := renderNoDatabase()
+	if result == "" {
+		t.Error("expected non-empty string")
+	}
+}
+
+func TestCommands(t *testing.T) {
+	p := New()
+
+	// Without model, should return nil
+	cmds := p.Commands()
+	if cmds != nil {
+		t.Errorf("expected nil commands without model, got %d", len(cmds))
+	}
+}
+
+func TestStartWithoutModel(t *testing.T) {
+	p := New()
+
+	// Start without model should return nil
+	cmd := p.Start()
+	if cmd != nil {
+		t.Error("expected nil command without model")
+	}
+}
+
+func TestViewWithoutModel(t *testing.T) {
+	p := New()
+
+	// View without model should show "no database" message
+	view := p.View(80, 24)
+	if view == "" {
+		t.Error("expected non-empty view")
 	}
 }

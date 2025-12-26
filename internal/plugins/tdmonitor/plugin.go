@@ -2,10 +2,10 @@ package tdmonitor
 
 import (
 	"fmt"
-	"os/exec"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/marcus/td/pkg/monitor"
 	"github.com/sst/sidecar/internal/plugin"
 )
 
@@ -15,51 +15,25 @@ const (
 	pluginIcon = "T"
 
 	pollInterval = 2 * time.Second
-	maxReadyIssues = 10
 )
 
-// View represents the current view mode.
-type View int
-
-const (
-	ViewList View = iota
-	ViewDetail
-)
-
-// Plugin implements the TD Monitor plugin.
+// Plugin wraps td's monitor TUI as a sidecar plugin.
+// This provides full feature parity with the standalone `td monitor` command.
 type Plugin struct {
 	ctx     *plugin.Context
-	data    *DataProvider
 	focused bool
 
-	// Current view
-	view View
+	// Embedded td monitor model
+	model *monitor.Model
 
-	// Session info
-	session *Session
-
-	// Issue lists
-	inProgress []Issue
-	ready      []Issue
-	reviewable []Issue
-
-	// UI state
-	cursor      int
-	scrollOff   int
-	activeList  string // "in_progress", "ready", "reviewable"
-	showDetail  bool
-	detailIssue *Issue
-
-	// View dimensions
+	// View dimensions (passed to model on each render)
 	width  int
 	height int
 }
 
 // New creates a new TD Monitor plugin.
 func New() *Plugin {
-	return &Plugin{
-		activeList: "ready",
-	}
+	return &Plugin{}
 }
 
 // ID returns the plugin identifier.
@@ -74,163 +48,80 @@ func (p *Plugin) Icon() string { return pluginIcon }
 // Init initializes the plugin with context.
 func (p *Plugin) Init(ctx *plugin.Context) error {
 	p.ctx = ctx
-	p.data = NewDataProvider(ctx.WorkDir)
 
-	// Try to open database - if it fails, plugin still loads but shows "no database"
-	// This is silent degradation - the plugin is available but non-functional
-	_ = p.data.Open()
+	// Try to create embedded monitor - silent degradation if database not found
+	model, err := monitor.NewEmbedded(ctx.WorkDir, pollInterval)
+	if err != nil {
+		// Database not initialized - plugin loads but is non-functional
+		p.ctx.Logger.Debug("td monitor: database not found", "error", err)
+		return nil
+	}
 
+	p.model = model
 	return nil
 }
 
 // Start begins plugin operation.
 func (p *Plugin) Start() tea.Cmd {
-	return tea.Batch(
-		p.refresh(),
-		p.tickCmd(),
-	)
+	if p.model == nil {
+		return nil
+	}
+	// Delegate to monitor's Init which starts data fetch and tick
+	return p.model.Init()
 }
 
 // Stop cleans up plugin resources.
 func (p *Plugin) Stop() {
-	if p.data != nil {
-		p.data.Close()
+	if p.model != nil {
+		p.model.Close()
 	}
 }
 
-// Update handles messages.
+// Update handles messages by delegating to the embedded monitor.
 func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		if p.showDetail {
-			return p.updateDetail(msg)
-		}
-		return p.updateList(msg)
-
-	case RefreshMsg:
-		return p, p.refresh()
-
-	case TickMsg:
-		return p, tea.Batch(p.refresh(), p.tickCmd())
-
-	case DataLoadedMsg:
-		p.session = msg.Session
-		p.inProgress = msg.InProgress
-		p.ready = msg.Ready
-		p.reviewable = msg.Reviewable
+	if p.model == nil {
 		return p, nil
-
-	case tea.WindowSizeMsg:
-		p.width = msg.Width
-		p.height = msg.Height
 	}
 
-	return p, nil
-}
-
-// updateList handles key events in the list view.
-func (p *Plugin) updateList(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
-	list := p.activeListData()
-
-	switch msg.String() {
-	case "j", "down":
-		if p.cursor < len(list)-1 {
-			p.cursor++
-			p.ensureCursorVisible()
-		}
-
-	case "k", "up":
-		if p.cursor > 0 {
-			p.cursor--
-			p.ensureCursorVisible()
-		}
-
-	case "g":
-		p.cursor = 0
-		p.scrollOff = 0
-
-	case "G":
-		if len(list) > 0 {
-			p.cursor = len(list) - 1
-			p.ensureCursorVisible()
-		}
-
-	case "tab":
-		// Cycle through lists
-		switch p.activeList {
-		case "in_progress":
-			p.activeList = "ready"
-		case "ready":
-			p.activeList = "reviewable"
-		case "reviewable":
-			p.activeList = "in_progress"
-		}
-		p.cursor = 0
-		p.scrollOff = 0
-
-	case "enter":
-		if len(list) > 0 && p.cursor < len(list) {
-			issue, err := p.data.IssueByID(list[p.cursor].ID)
-			if err == nil && issue != nil {
-				p.detailIssue = issue
-				p.showDetail = true
-			}
-		}
-
-	case "a":
-		// Approve issue via td CLI
-		if len(list) > 0 && p.cursor < len(list) {
-			return p, p.runTDCommand("approve", list[p.cursor].ID)
-		}
-
-	case "x":
-		// Delete issue via td CLI
-		if len(list) > 0 && p.cursor < len(list) {
-			return p, p.runTDCommand("delete", list[p.cursor].ID)
-		}
-
-	case "r":
-		return p, p.refresh()
+	// Handle window size - store for View() and forward to monitor
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		p.width = wsm.Width
+		p.height = wsm.Height
 	}
 
-	return p, nil
-}
-
-// updateDetail handles key events in the detail view.
-func (p *Plugin) updateDetail(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "q":
-		p.showDetail = false
-		p.detailIssue = nil
-
-	case "a":
-		if p.detailIssue != nil {
-			return p, p.runTDCommand("approve", p.detailIssue.ID)
-		}
-
-	case "x":
-		if p.detailIssue != nil {
-			return p, p.runTDCommand("delete", p.detailIssue.ID)
+	// Intercept quit to prevent monitor from exiting the whole app
+	if km, ok := msg.(tea.KeyMsg); ok {
+		if km.String() == "q" || km.String() == "ctrl+c" {
+			// Don't quit the app, just ignore
+			return p, nil
 		}
 	}
 
-	return p, nil
+	// Delegate to monitor
+	newModel, cmd := p.model.Update(msg)
+
+	// Update our reference (monitor uses value semantics)
+	if m, ok := newModel.(monitor.Model); ok {
+		p.model = &m
+	}
+
+	return p, cmd
 }
 
-// View renders the plugin.
+// View renders the plugin by delegating to the embedded monitor.
 func (p *Plugin) View(width, height int) string {
 	p.width = width
 	p.height = height
 
-	if p.data == nil || p.data.db == nil {
+	if p.model == nil {
 		return renderNoDatabase()
 	}
 
-	if p.showDetail && p.detailIssue != nil {
-		return p.renderDetail()
-	}
+	// Set dimensions on model before rendering
+	p.model.Width = width
+	p.model.Height = height
 
-	return p.renderList()
+	return p.model.View()
 }
 
 // IsFocused returns whether the plugin is focused.
@@ -241,21 +132,34 @@ func (p *Plugin) SetFocused(f bool) { p.focused = f }
 
 // Commands returns the available commands.
 func (p *Plugin) Commands() []plugin.Command {
+	if p.model == nil {
+		return nil
+	}
+
+	// Expose td monitor's key commands
 	return []plugin.Command{
-		{ID: "view-details", Name: "Details", Context: "td-monitor"},
-		{ID: "approve-issue", Name: "Approve issue", Context: "td-monitor"},
-		{ID: "delete-issue", Name: "Delete issue", Context: "td-monitor"},
-		{ID: "back", Name: "Back", Context: "td-detail"},
-		{ID: "approve-issue", Name: "Approve issue", Context: "td-detail"},
-		{ID: "delete-issue", Name: "Delete issue", Context: "td-detail"},
+		{ID: "open-details", Name: "Open details", Context: "td-monitor"},
+		{ID: "search", Name: "Search", Context: "td-monitor"},
+		{ID: "toggle-closed", Name: "Toggle closed", Context: "td-monitor"},
+		{ID: "approve", Name: "Approve", Context: "td-monitor"},
+		{ID: "delete", Name: "Delete", Context: "td-monitor"},
+		{ID: "stats", Name: "Stats", Context: "td-monitor"},
+		{ID: "help", Name: "Help", Context: "td-monitor"},
+		{ID: "close-modal", Name: "Close", Context: "td-modal"},
 	}
 }
 
-// FocusContext returns the current focus context.
+// FocusContext returns the current focus context based on monitor state.
 func (p *Plugin) FocusContext() string {
-	if p.showDetail {
-		return "td-detail"
+	if p.model == nil {
+		return "td-monitor"
 	}
+
+	// Check if modal is open
+	if p.model.ModalOpen || p.model.StatsOpen || p.model.ConfirmOpen {
+		return "td-modal"
+	}
+
 	return "td-monitor"
 }
 
@@ -263,100 +167,37 @@ func (p *Plugin) FocusContext() string {
 func (p *Plugin) Diagnostics() []plugin.Diagnostic {
 	status := "ok"
 	detail := ""
-	if p.data == nil || p.data.db == nil {
+
+	if p.model == nil {
 		status = "disabled"
 		detail = "no database"
 	} else {
-		total := len(p.inProgress) + len(p.ready) + len(p.reviewable)
-		detail = formatIssueCount(total)
+		// Count issues across categories
+		total := len(p.model.InProgress) +
+			len(p.model.TaskList.Ready) +
+			len(p.model.TaskList.Reviewable) +
+			len(p.model.TaskList.Blocked)
+		if total == 1 {
+			detail = "1 issue"
+		} else {
+			detail = formatCount(total, "issue", "issues")
+		}
 	}
+
 	return []plugin.Diagnostic{
 		{ID: "td-monitor", Status: status, Detail: detail},
 	}
 }
 
-// activeListData returns the currently active list.
-func (p *Plugin) activeListData() []Issue {
-	switch p.activeList {
-	case "in_progress":
-		return p.inProgress
-	case "reviewable":
-		return p.reviewable
-	default:
-		return p.ready
-	}
+// renderNoDatabase returns a view when no td database is found.
+func renderNoDatabase() string {
+	return "No td database found.\nRun 'td init' to initialize."
 }
 
-// refresh reloads data from the database.
-func (p *Plugin) refresh() tea.Cmd {
-	return func() tea.Msg {
-		if p.data == nil {
-			return DataLoadedMsg{}
-		}
-
-		session, _ := p.data.CurrentSession()
-		inProgress, _ := p.data.InProgressIssues()
-		ready, _ := p.data.ReadyIssues(maxReadyIssues)
-		reviewable, _ := p.data.ReviewableIssues()
-
-		return DataLoadedMsg{
-			Session:    session,
-			InProgress: inProgress,
-			Ready:      ready,
-			Reviewable: reviewable,
-		}
-	}
-}
-
-// tickCmd returns a command that triggers periodic refresh.
-func (p *Plugin) tickCmd() tea.Cmd {
-	return tea.Tick(pollInterval, func(t time.Time) tea.Msg {
-		return TickMsg{}
-	})
-}
-
-// runTDCommand executes a td CLI command.
-func (p *Plugin) runTDCommand(action, issueID string) tea.Cmd {
-	return func() tea.Msg {
-		cmd := exec.Command("td", action, issueID)
-		cmd.Dir = p.ctx.WorkDir
-		if err := cmd.Run(); err != nil {
-			return ErrorMsg{Err: err}
-		}
-		return RefreshMsg{}
-	}
-}
-
-// ensureCursorVisible adjusts scroll to keep cursor visible.
-func (p *Plugin) ensureCursorVisible() {
-	visibleRows := p.height - 6
-	if visibleRows < 1 {
-		visibleRows = 1
-	}
-
-	if p.cursor < p.scrollOff {
-		p.scrollOff = p.cursor
-	} else if p.cursor >= p.scrollOff+visibleRows {
-		p.scrollOff = p.cursor - visibleRows + 1
-	}
-}
-
-// formatIssueCount formats an issue count.
-func formatIssueCount(n int) string {
+// formatCount formats a count with singular/plural forms.
+func formatCount(n int, singular, plural string) string {
 	if n == 1 {
-		return "1 issue"
+		return "1 " + singular
 	}
-	return fmt.Sprintf("%d issues", n)
-}
-
-// Message types
-type RefreshMsg struct{}
-type TickMsg struct{}
-type ErrorMsg struct{ Err error }
-
-type DataLoadedMsg struct {
-	Session    *Session
-	InProgress []Issue
-	Ready      []Issue
-	Reviewable []Issue
+	return fmt.Sprintf("%d %s", n, plural)
 }
