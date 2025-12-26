@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sst/sidecar/internal/adapter"
@@ -15,18 +17,29 @@ import (
 	"github.com/sst/sidecar/internal/plugin"
 )
 
+// Version is set at build time via ldflags
+var Version = ""
+
 var (
-	configPath  = flag.String("config", "", "path to config file")
-	projectRoot = flag.String("project", ".", "project root directory")
-	debug       = flag.Bool("debug", false, "enable debug logging")
+	configPath   = flag.String("config", "", "path to config file")
+	projectRoot  = flag.String("project", ".", "project root directory")
+	debugFlag    = flag.Bool("debug", false, "enable debug logging")
+	versionFlag  = flag.Bool("version", false, "print version and exit")
+	shortVersion = flag.Bool("v", false, "print version and exit (short)")
 )
 
 func main() {
 	flag.Parse()
 
+	// Handle version flag
+	if *versionFlag || *shortVersion {
+		fmt.Printf("sidecar version %s\n", effectiveVersion(Version))
+		os.Exit(0)
+	}
+
 	// Setup logging
 	logLevel := slog.LevelInfo
-	if *debug {
+	if *debugFlag {
 		logLevel = slog.LevelDebug
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -86,3 +99,68 @@ func loadConfig(path string) (*config.Config, error) {
 	}
 	return config.Load()
 }
+
+// effectiveVersion returns the version string, with fallback to build info.
+func effectiveVersion(v string) string {
+	if v != "" {
+		return v
+	}
+
+	// Try to get version from Go build info
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+
+	// Check module version
+	if info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+
+	// Fall back to VCS info
+	var revision string
+	var dirty bool
+
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			dirty = setting.Value == "true"
+		}
+	}
+
+	if revision != "" {
+		ver := "devel+" + revision
+		if len(ver) > 20 {
+			ver = ver[:20]
+		}
+		if dirty {
+			ver += "+dirty"
+		}
+		return ver
+	}
+
+	return "devel"
+}
+
+// getShortRevision returns the first 12 chars of a revision.
+func getShortRevision(rev string) string {
+	if len(rev) > 12 {
+		return rev[:12]
+	}
+	return rev
+}
+
+func init() {
+	// Customize usage output
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: sidecar [options]\n\n")
+		fmt.Fprintf(os.Stderr, "A TUI dashboard for AI coding agents.\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+	}
+}
+
+// Ensure strings import is used
+var _ = strings.TrimSpace
