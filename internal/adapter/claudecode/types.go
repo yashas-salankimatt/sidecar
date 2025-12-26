@@ -1,0 +1,72 @@
+package claudecode
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// RawMessage represents a raw JSONL line from Claude Code.
+type RawMessage struct {
+	Type      string          `json:"type"`
+	UUID      string          `json:"uuid"`
+	ParentUUID *string        `json:"parentUuid"`
+	SessionID string          `json:"sessionId"`
+	Timestamp time.Time       `json:"timestamp"`
+	Message   *MessageContent `json:"message,omitempty"`
+	CWD       string          `json:"cwd,omitempty"`
+	Version   string          `json:"version,omitempty"`
+	GitBranch string          `json:"gitBranch,omitempty"`
+}
+
+// MessageContent holds the actual message data.
+type MessageContent struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+	Model   string          `json:"model,omitempty"`
+	ID      string          `json:"id,omitempty"`
+	Usage   *Usage          `json:"usage,omitempty"`
+}
+
+// Usage tracks token usage for a message.
+type Usage struct {
+	InputTokens              int           `json:"input_tokens"`
+	OutputTokens             int           `json:"output_tokens"`
+	CacheCreationInputTokens int           `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int           `json:"cache_read_input_tokens"`
+	CacheCreation            *CacheCreation `json:"cache_creation,omitempty"`
+}
+
+// CacheCreation holds cache-specific token data.
+type CacheCreation struct {
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+}
+
+// ContentBlock represents a single block in the content array.
+type ContentBlock struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Thinking string `json:"thinking,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Input    any    `json:"input,omitempty"`
+}
+
+// ToolResult represents the result of a tool call.
+type ToolResult struct {
+	Type      string `json:"type"`
+	ToolUseID string `json:"tool_use_id"`
+	Content   string `json:"content"`
+}
+
+// SessionMetadata holds metadata about a session file.
+type SessionMetadata struct {
+	Path      string
+	SessionID string
+	CWD       string
+	Version   string
+	GitBranch string
+	FirstMsg  time.Time
+	LastMsg   time.Time
+	MsgCount  int
+}
