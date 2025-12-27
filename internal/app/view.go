@@ -23,6 +23,10 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
+	if m.intro.Active && !m.intro.Done {
+		return m.intro.View()
+	}
+
 	// Show warning if terminal is too small
 	if m.width < minWidth || m.height < minHeight {
 		msg := fmt.Sprintf("Terminal too small (%dx%d)\nMinimum: %dx%d",

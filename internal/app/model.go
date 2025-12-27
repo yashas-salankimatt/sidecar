@@ -36,6 +36,9 @@ type Model struct {
 
 	// Ready state
 	ready bool
+
+	// Intro animation
+	intro IntroModel
 }
 
 // New creates a new application model.
@@ -48,6 +51,7 @@ func New(reg *plugin.Registry, km *keymap.Registry) Model {
 		showFooter:    true,
 		ui:            NewUIState(),
 		ready:         false,
+		intro:         NewIntroModel(),
 	}
 }
 
@@ -55,6 +59,7 @@ func New(reg *plugin.Registry, km *keymap.Registry) Model {
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		tickCmd(),
+		IntroTick(),
 	}
 
 	// Start all registered plugins
