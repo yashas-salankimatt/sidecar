@@ -23,6 +23,10 @@ type IntroLetter struct {
 	TargetX  float64
 	CurrentX float64
 
+	// Overshoot logic
+	ReachedTarget bool
+	OvershootMax  float64
+
 	// Color interpolation
 	StartColor   RGB
 	EndColor     RGB
@@ -80,10 +84,11 @@ func NewIntroModel() IntroModel {
 			Char:         char,
 			CurrentX:     -20.0 - float64(i)*10.0, // Start further left and more spaced out
 			TargetX:      float64(i),              // Target is adjacent index
+			OvershootMax: float64(i) + 0.5 + float64(i)*0.1, // Fan out slightly past target
 			StartColor:   hexToRGB(startColors[i%len(startColors)]),
 			EndColor:     targetColor,
 			CurrentColor: hexToRGB(startColors[i%len(startColors)]),
-			Delay:        time.Duration(i) * 150 * time.Millisecond,
+			Delay:        time.Duration(i) * 120 * time.Millisecond,
 		}
 	}
 
@@ -112,18 +117,41 @@ func (m *IntroModel) Update(dt time.Duration) {
 			continue
 		}
 
-		// Animation logic (Spring-like or EaseOut)
-		// Move towards TargetX
-		speed := 25.0 // pixels per second
-		dist := l.TargetX - l.CurrentX
+		// Animation logic (Overshoot then return)
+		// 1. Move towards OvershootMax until reached
+		// 2. Then move back to TargetX
 
-		// Simple ease-out
-		move := dist * 8.0 * dt.Seconds()
-		if move > 0 && move < speed*dt.Seconds() {
-			move = speed * dt.Seconds()
+		var target float64
+		var speed float64
+
+		if !l.ReachedTarget {
+			target = l.OvershootMax
+			speed = 30.0
+			
+			if l.CurrentX >= l.OvershootMax - 0.1 {
+				l.ReachedTarget = true
+			}
+		} else {
+			target = l.TargetX
+			speed = 5.0 // Slower return
 		}
-		if move > dist {
+
+		dist := target - l.CurrentX
+		move := dist * 6.0 * dt.Seconds()
+
+		// Clamp move to avoid oscillating wildly
+		if math.Abs(move) > math.Abs(dist) {
 			move = dist
+		}
+		
+		// Ensure minimum movement if far away
+		minMove := speed * dt.Seconds()
+		if math.Abs(dist) > 0.1 && math.Abs(move) < minMove {
+			if dist > 0 {
+				move = minMove
+			} else {
+				move = -minMove
+			}
 		}
 
 		l.CurrentX += move
@@ -136,8 +164,11 @@ func (m *IntroModel) Update(dt time.Duration) {
 		l.CurrentColor.B += (l.EndColor.B - l.CurrentColor.B) * colorSpeed
 
 		// Check if settled
-		if math.Abs(l.TargetX-l.CurrentX) > 0.1 ||
-			math.Abs(l.EndColor.R-l.CurrentColor.R) > 1.0 {
+		if l.ReachedTarget && 
+		   math.Abs(l.TargetX-l.CurrentX) < 0.1 &&
+		   math.Abs(l.EndColor.R-l.CurrentColor.R) < 1.0 {
+			// Settled
+		} else {
 			allSettled = false
 		}
 	}
