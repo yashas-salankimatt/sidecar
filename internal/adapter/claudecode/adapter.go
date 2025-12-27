@@ -100,6 +100,7 @@ func (a *Adapter) Sessions(projectRoot string) ([]adapter.Session, error) {
 			Slug:      meta.Slug,
 			CreatedAt: meta.FirstMsg,
 			UpdatedAt: meta.LastMsg,
+			Duration:  meta.LastMsg.Sub(meta.FirstMsg),
 			IsActive:  time.Since(meta.LastMsg) < 5*time.Minute,
 		})
 	}
@@ -147,12 +148,14 @@ func (a *Adapter) Messages(sessionID string) ([]adapter.Message, error) {
 			ID:        raw.UUID,
 			Role:      raw.Message.Role,
 			Timestamp: raw.Timestamp,
+			Model:     raw.Message.Model,
 		}
 
 		// Parse content
-		content, toolUses := a.parseContent(raw.Message.Content)
+		content, toolUses, thinkingBlocks := a.parseContent(raw.Message.Content)
 		msg.Content = content
 		msg.ToolUses = toolUses
+		msg.ThinkingBlocks = thinkingBlocks
 
 		// Parse usage
 		if raw.Message.Usage != nil {
@@ -283,31 +286,37 @@ func shortID(id string) string {
 	return id
 }
 
-// parseContent extracts text content and tool uses from the content field.
-func (a *Adapter) parseContent(rawContent json.RawMessage) (string, []adapter.ToolUse) {
+// parseContent extracts text content, tool uses, and thinking blocks from the content field.
+func (a *Adapter) parseContent(rawContent json.RawMessage) (string, []adapter.ToolUse, []adapter.ThinkingBlock) {
 	if len(rawContent) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 
 	// Try parsing as string first
 	var strContent string
 	if err := json.Unmarshal(rawContent, &strContent); err == nil {
-		return strContent, nil
+		return strContent, nil, nil
 	}
 
 	// Parse as array of content blocks
 	var blocks []ContentBlock
 	if err := json.Unmarshal(rawContent, &blocks); err != nil {
-		return "", nil
+		return "", nil, nil
 	}
 
 	var texts []string
 	var toolUses []adapter.ToolUse
+	var thinkingBlocks []adapter.ThinkingBlock
 
 	for _, block := range blocks {
 		switch block.Type {
 		case "text":
 			texts = append(texts, block.Text)
+		case "thinking":
+			thinkingBlocks = append(thinkingBlocks, adapter.ThinkingBlock{
+				Content:    block.Thinking,
+				TokenCount: len(block.Thinking) / 4, // rough estimate
+			})
 		case "tool_use":
 			inputStr := ""
 			if block.Input != nil {
@@ -323,5 +332,5 @@ func (a *Adapter) parseContent(rawContent json.RawMessage) (string, []adapter.To
 		}
 	}
 
-	return strings.Join(texts, "\n"), toolUses
+	return strings.Join(texts, "\n"), toolUses, thinkingBlocks
 }

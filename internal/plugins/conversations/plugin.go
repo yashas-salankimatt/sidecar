@@ -27,6 +27,7 @@ type View int
 const (
 	ViewSessions View = iota
 	ViewMessages
+	ViewAnalytics
 )
 
 // Plugin implements the conversations plugin.
@@ -44,12 +45,15 @@ type Plugin struct {
 	scrollOff int
 
 	// Message view state
-	selectedSession string
-	messages        []adapter.Message
-	msgCursor       int
-	msgScrollOff    int
-	pageSize        int
-	hasMore         bool
+	selectedSession  string
+	messages         []adapter.Message
+	msgCursor        int
+	msgScrollOff     int
+	pageSize         int
+	hasMore          bool
+	expandedThinking map[int]bool   // message index -> thinking expanded
+	sessionSummary   *SessionSummary // computed summary for current session
+	showToolSummary  bool            // toggle for tool impact view
 
 	// View dimensions
 	width  int
@@ -67,7 +71,8 @@ type Plugin struct {
 // New creates a new conversations plugin.
 func New() *Plugin {
 	return &Plugin{
-		pageSize: defaultPageSize,
+		pageSize:         defaultPageSize,
+		expandedThinking: make(map[int]bool),
 	}
 }
 
@@ -121,10 +126,14 @@ func (p *Plugin) Stop() {
 func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if p.view == ViewMessages {
+		switch p.view {
+		case ViewMessages:
 			return p.updateMessages(msg)
+		case ViewAnalytics:
+			return p.updateAnalytics(msg)
+		default:
+			return p.updateSessions(msg)
 		}
-		return p.updateSessions(msg)
 
 	case SessionsLoadedMsg:
 		p.sessions = msg.Sessions
@@ -133,6 +142,16 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 	case MessagesLoadedMsg:
 		p.messages = msg.Messages
 		p.hasMore = len(msg.Messages) >= p.pageSize
+		// Compute session summary
+		var duration time.Duration
+		for _, s := range p.sessions {
+			if s.ID == p.selectedSession {
+				duration = s.Duration
+				break
+			}
+		}
+		summary := ComputeSessionSummary(msg.Messages, duration)
+		p.sessionSummary = &summary
 		return p, nil
 
 	case WatchStartedMsg:
@@ -207,6 +226,11 @@ func (p *Plugin) updateSessions(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 
 	case "r":
 		return p, p.loadSessions()
+
+	case "U":
+		// Toggle global analytics view
+		p.view = ViewAnalytics
+		return p, nil
 	}
 
 	return p, nil
@@ -294,6 +318,15 @@ func (p *Plugin) visibleSessions() []adapter.Session {
 	return p.sessions
 }
 
+// updateAnalytics handles key events in analytics view.
+func (p *Plugin) updateAnalytics(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q", "U":
+		p.view = ViewSessions
+	}
+	return p, nil
+}
+
 // updateMessages handles key events in message view.
 func (p *Plugin) updateMessages(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 	switch msg.String() {
@@ -301,6 +334,9 @@ func (p *Plugin) updateMessages(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 		p.view = ViewSessions
 		p.messages = nil
 		p.selectedSession = ""
+		p.expandedThinking = make(map[int]bool) // reset thinking state
+		p.sessionSummary = nil
+		p.showToolSummary = false
 
 	case "j", "down":
 		if p.msgCursor < len(p.messages)-1 {
@@ -324,6 +360,16 @@ func (p *Plugin) updateMessages(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 			p.ensureMsgCursorVisible()
 		}
 
+	case "T":
+		// Toggle thinking block expansion for current message
+		if p.msgCursor < len(p.messages) && len(p.messages[p.msgCursor].ThinkingBlocks) > 0 {
+			p.expandedThinking[p.msgCursor] = !p.expandedThinking[p.msgCursor]
+		}
+
+	case "t":
+		// Toggle tool impact summary
+		p.showToolSummary = !p.showToolSummary
+
 	case " ":
 		// Load more messages (would need to implement paging in adapter)
 		return p, nil
@@ -340,10 +386,15 @@ func (p *Plugin) View(width, height int) string {
 	var content string
 	if p.adapter == nil {
 		content = renderNoAdapter()
-	} else if p.view == ViewMessages {
-		content = p.renderMessages()
 	} else {
-		content = p.renderSessions()
+		switch p.view {
+		case ViewMessages:
+			content = p.renderMessages()
+		case ViewAnalytics:
+			content = p.renderAnalytics()
+		default:
+			content = p.renderSessions()
+		}
 	}
 
 	// Constrain output to allocated height to prevent header scrolling off-screen.
@@ -368,13 +419,19 @@ func (p *Plugin) Commands() []plugin.Command {
 	if p.view == ViewMessages {
 		return []plugin.Command{
 			{ID: "back", Name: "Back", Context: "conversation-detail"},
-			{ID: "scroll", Name: "Scroll", Context: "conversation-detail"},
+			{ID: "tools", Name: "Tools", Context: "conversation-detail"},
+			{ID: "thinking", Name: "Thinking", Context: "conversation-detail"},
+		}
+	}
+	if p.view == ViewAnalytics {
+		return []plugin.Command{
+			{ID: "back", Name: "Back", Context: "analytics"},
 		}
 	}
 	return []plugin.Command{
 		{ID: "view-session", Name: "View", Context: "conversations"},
+		{ID: "analytics", Name: "Analytics", Context: "conversations"},
 		{ID: "search", Name: "Search", Context: "conversations"},
-		{ID: "refresh", Name: "Refresh", Context: "conversations"},
 	}
 }
 
@@ -383,10 +440,14 @@ func (p *Plugin) FocusContext() string {
 	if p.searchMode {
 		return "conversations-search"
 	}
-	if p.view == ViewMessages {
+	switch p.view {
+	case ViewMessages:
 		return "conversation-detail"
+	case ViewAnalytics:
+		return "analytics"
+	default:
+		return "conversations"
 	}
-	return "conversations"
 }
 
 // Diagnostics returns plugin health info.

@@ -15,7 +15,7 @@ func TestParseContent_String(t *testing.T) {
 	a := &Adapter{}
 
 	content := json.RawMessage(`"Hello, world!"`)
-	text, toolUses := a.parseContent(content)
+	text, toolUses, thinkingBlocks := a.parseContent(content)
 
 	if text != "Hello, world!" {
 		t.Errorf("got text %q, want %q", text, "Hello, world!")
@@ -23,13 +23,16 @@ func TestParseContent_String(t *testing.T) {
 	if len(toolUses) != 0 {
 		t.Errorf("got %d tool uses, want 0", len(toolUses))
 	}
+	if len(thinkingBlocks) != 0 {
+		t.Errorf("got %d thinking blocks, want 0", len(thinkingBlocks))
+	}
 }
 
 func TestParseContent_TextBlock(t *testing.T) {
 	a := &Adapter{}
 
 	content := json.RawMessage(`[{"type":"text","text":"First line"},{"type":"text","text":"Second line"}]`)
-	text, toolUses := a.parseContent(content)
+	text, toolUses, _ := a.parseContent(content)
 
 	if text != "First line\nSecond line" {
 		t.Errorf("got text %q, want %q", text, "First line\nSecond line")
@@ -43,7 +46,7 @@ func TestParseContent_ToolUse(t *testing.T) {
 	a := &Adapter{}
 
 	content := json.RawMessage(`[{"type":"text","text":"Let me read that."},{"type":"tool_use","id":"tool-123","name":"Read","input":{"file_path":"/tmp/test.go"}}]`)
-	text, toolUses := a.parseContent(content)
+	text, toolUses, _ := a.parseContent(content)
 
 	if text != "Let me read that." {
 		t.Errorf("got text %q, want %q", text, "Let me read that.")
@@ -62,7 +65,7 @@ func TestParseContent_ToolUse(t *testing.T) {
 func TestParseContent_Empty(t *testing.T) {
 	a := &Adapter{}
 
-	text, toolUses := a.parseContent(nil)
+	text, toolUses, _ := a.parseContent(nil)
 	if text != "" {
 		t.Errorf("got text %q, want empty", text)
 	}
@@ -70,7 +73,7 @@ func TestParseContent_Empty(t *testing.T) {
 		t.Errorf("got %d tool uses, want 0", len(toolUses))
 	}
 
-	text, toolUses = a.parseContent(json.RawMessage{})
+	text, toolUses, _ = a.parseContent(json.RawMessage{})
 	if text != "" {
 		t.Errorf("got text %q, want empty", text)
 	}
@@ -80,7 +83,7 @@ func TestParseContent_InvalidJSON(t *testing.T) {
 	a := &Adapter{}
 
 	content := json.RawMessage(`{invalid}`)
-	text, toolUses := a.parseContent(content)
+	text, toolUses, _ := a.parseContent(content)
 
 	if text != "" {
 		t.Errorf("got text %q, want empty", text)
@@ -94,14 +97,23 @@ func TestParseContent_ThinkingBlock(t *testing.T) {
 	a := &Adapter{}
 
 	content := json.RawMessage(`[{"type":"thinking","thinking":"Let me think..."},{"type":"text","text":"Answer here."}]`)
-	text, toolUses := a.parseContent(content)
+	text, toolUses, thinkingBlocks := a.parseContent(content)
 
-	// Thinking blocks should not be included in text
+	// Thinking blocks should not be included in text but should be extracted
 	if text != "Answer here." {
 		t.Errorf("got text %q, want %q", text, "Answer here.")
 	}
 	if len(toolUses) != 0 {
 		t.Errorf("got %d tool uses, want 0", len(toolUses))
+	}
+	if len(thinkingBlocks) != 1 {
+		t.Fatalf("got %d thinking blocks, want 1", len(thinkingBlocks))
+	}
+	if thinkingBlocks[0].Content != "Let me think..." {
+		t.Errorf("got thinking content %q, want %q", thinkingBlocks[0].Content, "Let me think...")
+	}
+	if thinkingBlocks[0].TokenCount != 3 { // len("Let me think...") / 4 = 3
+		t.Errorf("got token count %d, want 3", thinkingBlocks[0].TokenCount)
 	}
 }
 
@@ -353,7 +365,7 @@ func parseMessagesFromFile(t *testing.T, a *Adapter, path string) []testMessage 
 			Role: raw.Message.Role,
 		}
 
-		content, toolUses := a.parseContent(raw.Message.Content)
+		content, toolUses, _ := a.parseContent(raw.Message.Content)
 		msg.Content = content
 		msg.ToolUses = toolUses
 

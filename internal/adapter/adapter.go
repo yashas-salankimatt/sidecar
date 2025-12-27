@@ -34,7 +34,14 @@ type Session struct {
 	Slug      string // Short identifier for display (e.g., "ses_abc123")
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	Duration  time.Duration
 	IsActive  bool
+}
+
+// ThinkingBlock represents Claude's extended thinking content.
+type ThinkingBlock struct {
+	Content    string
+	TokenCount int // Estimated from len(Content)/4
 }
 
 // Message represents a message in a session.
@@ -43,8 +50,10 @@ type Message struct {
 	Role      string
 	Content   string
 	Timestamp time.Time
+	Model     string // Model ID (e.g., "claude-opus-4-5-20251101")
 	TokenUsage
-	ToolUses []ToolUse
+	ToolUses       []ToolUse
+	ThinkingBlocks []ThinkingBlock
 }
 
 // TokenUsage tracks token counts for a message or session.
