@@ -52,6 +52,7 @@ func DefaultBindings() []Binding {
 
 		// TD Monitor context
 		{Key: "a", Command: "approve-issue", Context: "td-monitor"},
+		{Key: "r", Command: "mark-review", Context: "td-monitor"},
 		{Key: "x", Command: "delete-issue", Context: "td-monitor"},
 		{Key: "enter", Command: "view-details", Context: "td-monitor"},
 

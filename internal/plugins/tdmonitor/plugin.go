@@ -148,6 +148,7 @@ func (p *Plugin) Commands() []plugin.Command {
 		{ID: "search", Name: "Search", Context: "td-monitor"},
 		{ID: "toggle-closed", Name: "Toggle closed", Context: "td-monitor"},
 		{ID: "approve", Name: "Approve", Context: "td-monitor"},
+		{ID: "mark-review", Name: "Review", Context: "td-monitor"},
 		{ID: "delete", Name: "Delete", Context: "td-monitor"},
 		{ID: "stats", Name: "Stats", Context: "td-monitor"},
 		{ID: "help", Name: "Help", Context: "td-monitor"},

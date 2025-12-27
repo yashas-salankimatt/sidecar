@@ -79,6 +79,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg processes keyboard input.
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Text input contexts: forward all keys to plugin except ctrl+c
+	// This ensures typing works correctly in commit messages, search boxes, etc.
+	if m.activeContext == "git-commit" {
+		// ctrl+c always quits
+		if msg.String() == "ctrl+c" {
+			m.registry.Stop()
+			return m, tea.Quit
+		}
+		// Forward everything else to plugin (esc, alt+enter handled by plugin)
+		if p := m.ActivePlugin(); p != nil {
+			newPlugin, cmd := p.Update(msg)
+			plugins := m.registry.Plugins()
+			if m.activePlugin < len(plugins) {
+				plugins[m.activePlugin] = newPlugin
+			}
+			m.updateContext()
+			return m, cmd
+		}
+		return m, nil
+	}
+
 	// Global quit - always takes precedence
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -159,7 +180,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showFooter = !m.showFooter
 		return m, nil
 	case "r":
-		return m, Refresh()
+		// In td-monitor context, 'r' is for mark-review - forward to plugin
+		// In other contexts, 'r' triggers global refresh
+		if m.activeContext != "td-monitor" {
+			return m, Refresh()
+		}
+		// Fall through to forward to plugin
 	}
 
 	// Try keymap for context-specific bindings
