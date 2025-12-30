@@ -60,7 +60,8 @@ func NewFileTree(workDir string) *FileTree {
 // Refresh reloads the git status from disk.
 func (t *FileTree) Refresh() error {
 	// Run git status with porcelain v2 format (null-separated)
-	cmd := exec.Command("git", "status", "--porcelain=v2", "-z")
+	// Use --untracked-files=all to recursively list all files in untracked folders
+	cmd := exec.Command("git", "status", "--porcelain=v2", "-z", "--untracked-files=all")
 	cmd.Dir = t.workDir
 	output, err := cmd.Output()
 	if err != nil {

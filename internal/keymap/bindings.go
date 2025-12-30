@@ -83,13 +83,23 @@ func DefaultBindings() []Binding {
 		{Key: "ctrl+p", Command: "cursor-up", Context: "conversations-search"},
 		{Key: "ctrl+n", Command: "cursor-down", Context: "conversations-search"},
 
-		// Conversation detail context
+		// Conversation detail context (turn list view)
 		{Key: "esc", Command: "back", Context: "conversation-detail"},
 		{Key: "q", Command: "back", Context: "conversation-detail"},
 		{Key: "j", Command: "scroll", Context: "conversation-detail"},
 		{Key: "k", Command: "scroll", Context: "conversation-detail"},
 		{Key: "g", Command: "cursor-top", Context: "conversation-detail"},
 		{Key: "G", Command: "cursor-bottom", Context: "conversation-detail"},
+
+		// Message detail context (single turn detail view)
+		{Key: "esc", Command: "back", Context: "message-detail"},
+		{Key: "q", Command: "back", Context: "message-detail"},
+		{Key: "j", Command: "scroll", Context: "message-detail"},
+		{Key: "k", Command: "scroll", Context: "message-detail"},
+		{Key: "g", Command: "cursor-top", Context: "message-detail"},
+		{Key: "G", Command: "cursor-bottom", Context: "message-detail"},
+		{Key: "ctrl+d", Command: "page-down", Context: "message-detail"},
+		{Key: "ctrl+u", Command: "page-up", Context: "message-detail"},
 
 		// Conversations sidebar context (two-pane mode, left pane focused)
 		{Key: "enter", Command: "view-session", Context: "conversations-sidebar"},

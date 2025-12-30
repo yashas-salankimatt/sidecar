@@ -13,6 +13,7 @@ import (
 	"github.com/sst/sidecar/internal/adapter"
 	_ "github.com/sst/sidecar/internal/adapter/claudecode"
 	_ "github.com/sst/sidecar/internal/adapter/codex"
+	_ "github.com/sst/sidecar/internal/adapter/opencode"
 	"github.com/sst/sidecar/internal/app"
 	"github.com/sst/sidecar/internal/config"
 	"github.com/sst/sidecar/internal/event"

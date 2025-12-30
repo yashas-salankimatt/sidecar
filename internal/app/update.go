@@ -156,7 +156,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Global quit - ctrl+c always takes precedence, 'q' only in global/empty context
+	// Global quit - ctrl+c always takes precedence, 'q' in root plugin contexts
 	switch msg.String() {
 	case "ctrl+c":
 		if !m.showHelp && !m.showDiagnostics && !m.showPalette {
@@ -164,14 +164,13 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "q":
-		// 'q' is used for navigation in plugin contexts (back, escape)
-		// Only trigger quit in global context or when no plugin is active
-		if (m.activeContext == "global" || m.activeContext == "") &&
-			!m.showHelp && !m.showDiagnostics && !m.showPalette {
+		// 'q' triggers quit in root contexts where it's not used for navigation
+		// Root contexts: global, or plugin root views (not sub-views like detail/diff)
+		if !m.showHelp && !m.showDiagnostics && !m.showPalette && isRootContext(m.activeContext) {
 			m.showQuitConfirm = true
 			return m, nil
 		}
-		// Fall through to forward to plugin
+		// Fall through to forward to plugin for navigation (back/escape)
 	}
 
 	// Handle palette input when open
@@ -286,5 +285,25 @@ func (m *Model) updateContext() {
 		m.activeContext = p.FocusContext()
 	} else {
 		m.activeContext = "global"
+	}
+}
+
+// isRootContext returns true if the context is a root view where 'q' should quit.
+// Root contexts are plugin top-level views (not sub-views like detail/diff/commit).
+func isRootContext(ctx string) bool {
+	switch ctx {
+	case "global", "":
+		return true
+	// Plugin root contexts where 'q' is not used for navigation
+	case "conversations", "conversations-sidebar":
+		return true
+	case "git-status", "git-status-commits", "git-status-diff":
+		return true
+	case "file-browser-tree":
+		return true
+	case "td-monitor":
+		return true
+	default:
+		return false
 	}
 }

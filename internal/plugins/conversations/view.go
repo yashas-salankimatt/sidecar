@@ -609,6 +609,8 @@ func adapterAbbrev(session adapter.Session) string {
 		return "CC"
 	case "codex":
 		return "CX"
+	case "opencode":
+		return "OC"
 	default:
 		name := session.AdapterName
 		if name == "" {
@@ -634,6 +636,8 @@ func adapterShortName(session *adapter.Session) string {
 		return "claude"
 	case "codex":
 		return "codex"
+	case "opencode":
+		return "opencode"
 	default:
 		if session.AdapterName != "" {
 			return strings.ToLower(session.AdapterName)
@@ -681,6 +685,9 @@ func adapterFilterOptions(adapters map[string]adapter.Adapter) []adapterFilterOp
 	if a, ok := adapters["codex"]; ok {
 		addOption("codex", a.Name(), "o")
 	}
+	if a, ok := adapters["opencode"]; ok {
+		addOption("opencode", a.Name(), "p")
+	}
 
 	var extra []adapterFilterOption
 	for id, a := range adapters {
@@ -723,6 +730,8 @@ func resumeCommand(session *adapter.Session) string {
 		return fmt.Sprintf("claude --resume %s", session.ID)
 	case "codex":
 		return fmt.Sprintf("codex resume %s", session.ID)
+	case "opencode":
+		return fmt.Sprintf("opencode --continue -s %s", session.ID)
 	default:
 		return ""
 	}
@@ -744,12 +753,24 @@ func modelShortName(model string) string {
 			return "gpt" + parts[1]
 		}
 		return "gpt"
-	case strings.HasPrefix(model, "o"):
+	case strings.HasPrefix(model, "o1") || strings.HasPrefix(model, "o3"):
 		parts := strings.Split(model, "-")
 		if len(parts) > 0 && parts[0] != "" {
 			return parts[0]
 		}
 		return "o"
+	case strings.HasPrefix(model, "gemini"):
+		return "gemini"
+	case strings.HasPrefix(model, "grok"):
+		return "grok"
+	case strings.HasPrefix(model, "deepseek"):
+		return "deepseek"
+	case strings.HasPrefix(model, "mistral"):
+		return "mistral"
+	case strings.HasPrefix(model, "llama"):
+		return "llama"
+	case strings.HasPrefix(model, "qwen"):
+		return "qwen"
 	default:
 		return ""
 	}
@@ -774,6 +795,7 @@ func formatSessionDuration(d time.Duration) string {
 // estimateCost calculates cost in dollars based on model and tokens.
 func estimateCost(model string, inputTokens, outputTokens, cacheRead int) float64 {
 	var inRate, outRate float64
+	model = strings.ToLower(model)
 	switch {
 	case strings.Contains(model, "opus"):
 		inRate, outRate = 15.0, 75.0
@@ -781,6 +803,16 @@ func estimateCost(model string, inputTokens, outputTokens, cacheRead int) float6
 		inRate, outRate = 3.0, 15.0
 	case strings.Contains(model, "haiku"):
 		inRate, outRate = 0.25, 1.25
+	case strings.Contains(model, "gpt-4o"):
+		inRate, outRate = 2.5, 10.0
+	case strings.Contains(model, "gpt-4"):
+		inRate, outRate = 10.0, 30.0
+	case strings.Contains(model, "o1") || strings.Contains(model, "o3"):
+		inRate, outRate = 15.0, 60.0
+	case strings.Contains(model, "gemini"):
+		inRate, outRate = 1.25, 5.0
+	case strings.Contains(model, "deepseek"):
+		inRate, outRate = 0.14, 0.28
 	default:
 		inRate, outRate = 3.0, 15.0 // Default to sonnet rates
 	}
