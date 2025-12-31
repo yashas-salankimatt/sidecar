@@ -189,25 +189,24 @@ Key features:
 
 ## Embedded Plugins (TD Monitor)
 
-When embedding a plugin that has its own mouse support (like TD), coordinate offsets must be handled carefully:
+When embedding a plugin that has its own mouse support (like TD), coordinate offsets are handled at the app level:
 
-1. Sidecar subtracts 2 from mouse Y (for app header) before forwarding to plugins
-2. The embedded plugin's hit bounds must be calculated for the same coordinate space
-3. For TD, this is done by adjusting `WindowSizeMsg.Height` by -2 before forwarding
+1. Sidecar subtracts 2 from `WindowSizeMsg.Height` (for app header) before forwarding to plugins
+2. Sidecar subtracts 2 from `MouseMsg.Y` before forwarding to plugins
+3. Plugins receive both messages in plugin-local coordinate space (Y=0 = top of plugin content)
 
 ```go
 // In tdmonitor/plugin.go Update()
+// The app already adjusts height for the header offset
 if wsm, ok := msg.(tea.WindowSizeMsg); ok {
-    adjustedMsg := tea.WindowSizeMsg{
-        Width:  wsm.Width,
-        Height: wsm.Height - 2, // Match Y offset applied to MouseMsg
-    }
-    newModel, cmd := p.model.Update(adjustedMsg)
+    p.width = wsm.Width
+    p.height = wsm.Height
+    newModel, cmd := p.model.Update(wsm)  // Forward directly, no adjustment needed
     // ...
 }
 ```
 
-This ensures TD's `PanelBounds` (calculated in `updatePanelBounds()`) align with the adjusted mouse coordinates.
+This ensures TD's `PanelBounds` (calculated in `updatePanelBounds()`) align with the already-adjusted mouse coordinates.
 
 ## Testing Mouse Support
 

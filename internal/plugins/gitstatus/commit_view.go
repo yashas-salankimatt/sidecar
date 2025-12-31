@@ -104,7 +104,7 @@ func (p *Plugin) renderCommit() string {
 
 	// Footer with keybindings
 	escKey := styles.KeyHint.Render(" Esc ")
-	commitKey := styles.KeyHint.Render(" ^S ")
+	commitKey := styles.KeyHint.Render(" ^Enter ")
 	sb.WriteString(fmt.Sprintf(" %s Cancel   %s Commit", escKey, commitKey))
 
 	return sb.String()
