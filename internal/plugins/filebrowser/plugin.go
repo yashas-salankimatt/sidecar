@@ -15,6 +15,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/sidecar/internal/mouse"
 	"github.com/marcus/sidecar/internal/msg"
@@ -990,12 +991,22 @@ func (p *Plugin) handleTreeKey(key string) (plugin.Plugin, tea.Cmd) {
 		}
 
 	case "y":
-		// Yank (copy) file/directory to clipboard
+		// Yank (mark) file/directory for paste
 		node := p.tree.GetNode(p.treeCursor)
 		if node != nil && node != p.tree.Root {
 			p.clipboardPath = node.Path
 			p.clipboardIsDir = node.IsDir
-			return p, msg.ShowToast("Yanked: "+node.Path, 2*time.Second)
+			return p, msg.ShowToast("Marked for copy: "+node.Path, 2*time.Second)
+		}
+
+	case "Y":
+		// Copy relative path to system clipboard
+		node := p.tree.GetNode(p.treeCursor)
+		if node != nil && node != p.tree.Root {
+			if err := clipboard.WriteAll(node.Path); err != nil {
+				return p, msg.ShowToast("Failed to copy path", 2*time.Second)
+			}
+			return p, msg.ShowToast("Copied: "+node.Path, 2*time.Second)
 		}
 
 	case "p":
@@ -1947,8 +1958,9 @@ func (p *Plugin) Commands() []plugin.Command {
 		{ID: "create-file", Name: "New", Description: "Create new file", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 4},
 		{ID: "create-dir", Name: "Mkdir", Description: "Create new directory", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 4},
 		{ID: "delete", Name: "Delete", Description: "Delete file or directory", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 4},
-		{ID: "yank", Name: "Yank", Description: "Copy file to clipboard", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 5},
-		{ID: "paste", Name: "Paste", Description: "Paste file from clipboard", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 5},
+		{ID: "yank", Name: "Yank", Description: "Mark file for copy (use p to paste)", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 5},
+		{ID: "copy-path", Name: "CopyPath", Description: "Copy relative path to clipboard", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 5},
+		{ID: "paste", Name: "Paste", Description: "Paste yanked file", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 5},
 		{ID: "sort", Name: "Sort", Description: "Cycle sort mode", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 6},
 		{ID: "rename", Name: "Rename", Description: "Rename file or directory", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 7},
 		{ID: "move", Name: "Move", Description: "Move file or directory", Category: plugin.CategoryActions, Context: "file-browser-tree", Priority: 7},

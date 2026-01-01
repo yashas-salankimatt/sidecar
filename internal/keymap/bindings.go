@@ -123,6 +123,7 @@ func DefaultBindings() []Binding {
 		{Key: "A", Command: "create-dir", Context: "file-browser-tree"},
 		{Key: "d", Command: "delete", Context: "file-browser-tree"},
 		{Key: "y", Command: "yank", Context: "file-browser-tree"},
+		{Key: "Y", Command: "copy-path", Context: "file-browser-tree"},
 		{Key: "p", Command: "paste", Context: "file-browser-tree"},
 		{Key: "s", Command: "sort", Context: "file-browser-tree"},
 		{Key: "r", Command: "rename", Context: "file-browser-tree"},
