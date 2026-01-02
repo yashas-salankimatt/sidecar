@@ -31,6 +31,9 @@ type Plugin struct {
 	// View dimensions (passed to model on each render)
 	width  int
 	height int
+
+	// Track StatusMessage changes to surface as sidecar toasts
+	lastStatusMessage string
 }
 
 // New creates a new TD Monitor plugin.
@@ -127,7 +130,36 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		p.model = &m
 	}
 
-	return p, cmd
+	// Surface td toasts to sidecar
+	var cmds []tea.Cmd
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	// Check for StatusMessage changes and emit ToastMsg
+	if p.model != nil && p.model.StatusMessage != "" &&
+		p.model.StatusMessage != p.lastStatusMessage {
+		p.lastStatusMessage = p.model.StatusMessage
+		message := p.model.StatusMessage
+		isError := p.model.StatusIsError
+		cmds = append(cmds, func() tea.Msg {
+			return app.ToastMsg{
+				Message:  message,
+				Duration: 2 * time.Second,
+				IsError:  isError,
+			}
+		})
+	} else if p.model != nil && p.model.StatusMessage == "" {
+		p.lastStatusMessage = ""
+	}
+
+	if len(cmds) == 0 {
+		return p, nil
+	}
+	if len(cmds) == 1 {
+		return p, cmds[0]
+	}
+	return p, tea.Batch(cmds...)
 }
 
 // View renders the plugin by delegating to the embedded monitor.

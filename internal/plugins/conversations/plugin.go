@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/sidecar/internal/adapter"
+	"github.com/marcus/sidecar/internal/app"
 	"github.com/marcus/sidecar/internal/plugin"
 )
 
@@ -1316,9 +1317,9 @@ func (p *Plugin) copySessionToClipboard() tea.Cmd {
 	return func() tea.Msg {
 		md := ExportSessionAsMarkdown(session, messages)
 		if err := CopyToClipboard(md); err != nil {
-			return ToastMsg{Message: "Copy failed: " + err.Error(), IsError: true}
+			return app.ToastMsg{Message: "Copy failed: " + err.Error(), Duration: 2 * time.Second, IsError: true}
 		}
-		return ToastMsg{Message: "Session copied to clipboard"}
+		return app.ToastMsg{Message: "Session copied to clipboard", Duration: 2 * time.Second}
 	}
 }
 
@@ -1331,9 +1332,9 @@ func (p *Plugin) exportSessionToFile() tea.Cmd {
 	return func() tea.Msg {
 		filename, err := ExportSessionToFile(session, messages, workDir)
 		if err != nil {
-			return ToastMsg{Message: "Export failed: " + err.Error(), IsError: true}
+			return app.ToastMsg{Message: "Export failed: " + err.Error(), Duration: 2 * time.Second, IsError: true}
 		}
-		return ToastMsg{Message: "Exported to " + filename}
+		return app.ToastMsg{Message: "Exported to " + filename, Duration: 2 * time.Second}
 	}
 }
 
@@ -1360,10 +1361,6 @@ func (p *Plugin) adapterForSession(sessionID string) adapter.Adapter {
 }
 
 // Message types
-type ToastMsg struct {
-	Message string
-	IsError bool
-}
 type SessionsLoadedMsg struct {
 	Sessions []adapter.Session
 }

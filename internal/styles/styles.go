@@ -99,6 +99,19 @@ var (
 			Foreground(Warning).
 			Bold(true)
 
+	// Toast styles for status messages
+	ToastSuccess = lipgloss.NewStyle().
+			Background(Success).
+			Foreground(lipgloss.Color("#000000")).
+			Bold(true).
+			Padding(0, 1)
+
+	ToastError = lipgloss.NewStyle().
+			Background(Error).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Bold(true).
+			Padding(0, 1)
+
 	StatusUntracked = lipgloss.NewStyle().
 			Foreground(TextMuted)
 

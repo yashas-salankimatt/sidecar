@@ -15,6 +15,7 @@ type (
 	ToastMsg struct {
 		Message  string
 		Duration time.Duration
+		IsError  bool // true for error toasts (red), false for success (green)
 	}
 
 	// RefreshMsg triggers a full refresh.

@@ -232,7 +232,11 @@ func (m Model) renderFooter() string {
 	if m.ui.HasToast() {
 		status = styles.StatusModified.Render(m.ui.ToastMessage)
 	} else if m.statusMsg != "" {
-		status = styles.StatusModified.Render(m.statusMsg)
+		toastStyle := styles.ToastSuccess
+		if m.statusIsError {
+			toastStyle = styles.ToastError
+		}
+		status = toastStyle.Render(m.statusMsg)
 	}
 
 	// Last refresh

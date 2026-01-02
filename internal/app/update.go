@@ -99,10 +99,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ToastMsg:
 		m.ShowToast(msg.Message, msg.Duration)
+		m.statusIsError = msg.IsError
 		return m, nil
 
 	case appmsg.ToastMsg:
 		m.ShowToast(msg.Message, msg.Duration)
+		m.statusIsError = msg.IsError
 		return m, nil
 
 	case RefreshMsg:

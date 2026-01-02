@@ -38,8 +38,9 @@ type Model struct {
 	ui *UIState
 
 	// Status/toast messages
-	statusMsg    string
-	statusExpiry time.Time
+	statusMsg     string
+	statusExpiry  time.Time
+	statusIsError bool
 
 	// Error handling
 	lastError error
@@ -166,5 +167,6 @@ func (m *Model) ShowToast(msg string, duration time.Duration) {
 func (m *Model) ClearToast() {
 	if m.statusMsg != "" && time.Now().After(m.statusExpiry) {
 		m.statusMsg = ""
+		m.statusIsError = false
 	}
 }
