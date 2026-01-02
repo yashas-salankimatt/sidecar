@@ -43,7 +43,13 @@ func Init() error {
 	if err != nil {
 		return err
 	}
-	path = filepath.Join(home, ".config", "sidecar", "state.json")
+	return InitWithDir(filepath.Join(home, ".config", "sidecar"))
+}
+
+// InitWithDir loads state from a specified directory.
+// This is primarily for testing to avoid reading real user state.
+func InitWithDir(dir string) error {
+	path = filepath.Join(dir, "state.json")
 	return Load()
 }
 

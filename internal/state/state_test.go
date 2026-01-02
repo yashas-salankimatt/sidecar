@@ -14,12 +14,10 @@ func TestInit(t *testing.T) {
 	originalPath := path
 	originalCurrent := current
 
-	// Set path to temp location
-	path = filepath.Join(tmpDir, ".config", "sidecar", "state.json")
-
-	err := Init()
+	// Use InitWithDir to avoid reading real user state
+	err := InitWithDir(filepath.Join(tmpDir, ".config", "sidecar"))
 	if err != nil {
-		t.Fatalf("Init() failed: %v", err)
+		t.Fatalf("InitWithDir() failed: %v", err)
 	}
 
 	if current == nil {
