@@ -530,6 +530,18 @@ func (p *Plugin) updateStatus(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 			p.pushMenuReturnMode = p.viewMode
 			p.viewMode = ViewModePushMenu
 		}
+
+	case "y":
+		// Yank commit as markdown (when on commit in sidebar)
+		if p.cursorOnCommit() {
+			return p, p.copyCommitToClipboard()
+		}
+
+	case "Y":
+		// Yank commit ID (when on commit in sidebar)
+		if p.cursorOnCommit() {
+			return p, p.copyCommitIDToClipboard()
+		}
 	}
 
 	return p, nil
@@ -701,6 +713,14 @@ func (p *Plugin) updateCommitPreviewPane(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd
 		if p.sidebarVisible {
 			p.activePane = PaneSidebar
 		}
+
+	case "y":
+		// Yank commit as markdown
+		return p, p.copyCommitToClipboard()
+
+	case "Y":
+		// Yank commit ID
+		return p, p.copyCommitIDToClipboard()
 	}
 
 	return p, nil
@@ -850,6 +870,14 @@ func (p *Plugin) updateHistory(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 			p.pushMenuReturnMode = p.viewMode
 			p.viewMode = ViewModePushMenu
 		}
+
+	case "y":
+		// Yank commit as markdown
+		return p, p.copyCommitToClipboard()
+
+	case "Y":
+		// Yank commit ID
+		return p, p.copyCommitIDToClipboard()
 	}
 
 	return p, nil
@@ -894,6 +922,14 @@ func (p *Plugin) updateCommitDetail(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 			p.diffScroll = 0
 			return p, p.loadCommitFileDiff(p.selectedCommit.Hash, file.Path)
 		}
+
+	case "y":
+		// Yank commit as markdown
+		return p, p.copyCommitToClipboard()
+
+	case "Y":
+		// Yank commit ID
+		return p, p.copyCommitIDToClipboard()
 	}
 
 	return p, nil
@@ -1041,16 +1077,24 @@ func (p *Plugin) Commands() []plugin.Command {
 		{ID: "view-commit", Name: "View", Description: "View commit details", Category: plugin.CategoryView, Context: "git-status-commits", Priority: 1},
 		{ID: "show-history", Name: "History", Description: "View commit history", Category: plugin.CategoryView, Context: "git-status-commits", Priority: 2},
 		{ID: "push", Name: "Push", Description: "Push commits to remote", Category: plugin.CategoryGit, Context: "git-status-commits", Priority: 2},
+		{ID: "yank-commit", Name: "Yank", Description: "Copy commit as markdown", Category: plugin.CategoryActions, Context: "git-status-commits", Priority: 3},
+		{ID: "yank-id", Name: "YankID", Description: "Copy commit ID", Category: plugin.CategoryActions, Context: "git-status-commits", Priority: 3},
 		// git-history context
 		{ID: "view-commit", Name: "View", Description: "View commit details", Category: plugin.CategoryView, Context: "git-history", Priority: 1},
 		{ID: "back", Name: "Back", Description: "Return to file list", Category: plugin.CategoryNavigation, Context: "git-history", Priority: 1},
 		{ID: "push", Name: "Push", Description: "Push commits to remote", Category: plugin.CategoryGit, Context: "git-history", Priority: 2},
+		{ID: "yank-commit", Name: "Yank", Description: "Copy commit as markdown", Category: plugin.CategoryActions, Context: "git-history", Priority: 3},
+		{ID: "yank-id", Name: "YankID", Description: "Copy commit ID", Category: plugin.CategoryActions, Context: "git-history", Priority: 3},
 		// git-commit-detail context
 		{ID: "view-diff", Name: "Diff", Description: "View file diff", Category: plugin.CategoryView, Context: "git-commit-detail", Priority: 1},
 		{ID: "back", Name: "Back", Description: "Return to history", Category: plugin.CategoryNavigation, Context: "git-commit-detail", Priority: 1},
+		{ID: "yank-commit", Name: "Yank", Description: "Copy commit as markdown", Category: plugin.CategoryActions, Context: "git-commit-detail", Priority: 3},
+		{ID: "yank-id", Name: "YankID", Description: "Copy commit ID", Category: plugin.CategoryActions, Context: "git-commit-detail", Priority: 3},
 		// git-commit-preview context (commit preview in right pane)
 		{ID: "view-diff", Name: "Diff", Description: "View file diff", Category: plugin.CategoryView, Context: "git-commit-preview", Priority: 1},
 		{ID: "back", Name: "Back", Description: "Return to sidebar", Category: plugin.CategoryNavigation, Context: "git-commit-preview", Priority: 1},
+		{ID: "yank-commit", Name: "Yank", Description: "Copy commit as markdown", Category: plugin.CategoryActions, Context: "git-commit-preview", Priority: 3},
+		{ID: "yank-id", Name: "YankID", Description: "Copy commit ID", Category: plugin.CategoryActions, Context: "git-commit-preview", Priority: 3},
 		// git-diff context
 		{ID: "close-diff", Name: "Close", Description: "Close diff view", Category: plugin.CategoryView, Context: "git-diff", Priority: 1},
 		{ID: "scroll", Name: "Scroll", Description: "Scroll diff content", Category: plugin.CategoryNavigation, Context: "git-diff", Priority: 2},
