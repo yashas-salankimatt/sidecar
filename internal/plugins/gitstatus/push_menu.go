@@ -5,8 +5,12 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/marcus/sidecar/internal/styles"
 )
+
+// dimStyle is used to dim background content behind modals.
+var dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 // renderPushMenu renders the push options popup menu.
 func (p *Plugin) renderPushMenu() string {
@@ -66,8 +70,22 @@ func (p *Plugin) renderPushMenu() string {
 	return overlayMenu(background, menu, p.width, p.height)
 }
 
-// overlayMenu overlays the menu on top of the background.
+// dimBackground dims the background content by stripping colors and applying a muted style.
+func dimBackground(background string, width, height int) string {
+	lines := strings.Split(background, "\n")
+	for i, line := range lines {
+		// Strip ANSI codes and re-render with dim style
+		stripped := ansi.Strip(line)
+		lines[i] = dimStyle.Render(stripped)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// overlayMenu overlays the menu on top of the dimmed background.
 func overlayMenu(background, menu string, width, height int) string {
+	// Dim the background
+	background = dimBackground(background, width, height)
+
 	bgLines := strings.Split(background, "\n")
 	menuLines := strings.Split(menu, "\n")
 
