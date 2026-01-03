@@ -38,7 +38,7 @@ func (a *Adapter) ID() string { return adapterID }
 func (a *Adapter) Name() string { return adapterName }
 
 // Icon returns the adapter icon for badge display.
-func (a *Adapter) Icon() string { return "✦" }
+func (a *Adapter) Icon() string { return "◆" }
 
 // Detect checks if Claude Code sessions exist for the given project.
 func (a *Adapter) Detect(projectRoot string) (bool, error) {

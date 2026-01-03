@@ -60,6 +60,7 @@ func TestIsRootContext(t *testing.T) {
 		{"git-status-commits", true},
 		{"git-status-diff", true},
 		{"file-browser-tree", true},
+		{"file-browser-preview", true},
 		{"td-monitor", true},
 
 		// Non-root contexts (sub-views)

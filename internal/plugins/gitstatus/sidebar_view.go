@@ -278,11 +278,6 @@ func (p *Plugin) renderSidebarSection(title string, entries []*FileEntry, lineNu
 
 // renderSidebarEntry renders a single file entry in the sidebar.
 func (p *Plugin) renderSidebarEntry(entry *FileEntry, selected bool, maxWidth int) string {
-	// Cursor indicator
-	cursor := "  "
-	if selected {
-		cursor = styles.ListCursor.Render("> ")
-	}
 
 	// Status indicator
 	var statusStyle lipgloss.Style
@@ -315,41 +310,39 @@ func (p *Plugin) renderSidebarEntry(entry *FileEntry, selected bool, maxWidth in
 		countStr := fmt.Sprintf("(%d)", fileCount)
 
 		// Calculate available width
-		availableWidth := maxWidth - 6 // cursor + status + indicator + spacing
+		availableWidth := maxWidth - 4 // status + indicator + spacing
 		displayName := folderName
 		if len(folderName)+len(countStr)+1 > availableWidth && availableWidth > 10 {
 			displayName = folderName[:availableWidth-len(countStr)-4] + "…/"
 		}
 
 		if selected {
-			plainCursor := "> "
-			plainLine := fmt.Sprintf("%s%s %s %s %s", plainCursor, string(entry.Status), indicator, displayName, countStr)
+			plainLine := fmt.Sprintf("%s %s %s %s", string(entry.Status), indicator, displayName, countStr)
 			if len(plainLine) < maxWidth {
 				plainLine += strings.Repeat(" ", maxWidth-len(plainLine))
 			}
 			return styles.ListItemSelected.Render(plainLine)
 		}
 
-		return styles.ListItemNormal.Render(fmt.Sprintf("%s%s %s %s %s", cursor, status, indicator, displayName, styles.Muted.Render(countStr)))
+		return styles.ListItemNormal.Render(fmt.Sprintf("%s %s %s %s", status, indicator, displayName, styles.Muted.Render(countStr)))
 	}
 
 	// Path - truncate if needed
 	path := entry.Path
-	availableWidth := maxWidth - 4 // cursor + status + space
+	availableWidth := maxWidth - 2 // status + space
 	if len(path) > availableWidth && availableWidth > 3 {
 		path = "…" + path[len(path)-availableWidth+1:]
 	}
 
 	if selected {
-		plainCursor := "> "
-		plainLine := fmt.Sprintf("%s%s %s", plainCursor, string(entry.Status), path)
+		plainLine := fmt.Sprintf("%s %s", string(entry.Status), path)
 		if len(plainLine) < maxWidth {
 			plainLine += strings.Repeat(" ", maxWidth-len(plainLine))
 		}
 		return styles.ListItemSelected.Render(plainLine)
 	}
 
-	return styles.ListItemNormal.Render(fmt.Sprintf("%s%s %s", cursor, status, path))
+	return styles.ListItemNormal.Render(fmt.Sprintf("%s %s", status, path))
 }
 
 // renderRecentCommits renders the recent commits section in the sidebar.
@@ -357,7 +350,7 @@ func (p *Plugin) renderSidebarEntry(entry *FileEntry, selected bool, maxWidth in
 func (p *Plugin) renderRecentCommits(currentY *int, maxVisible int) string {
 	var sb strings.Builder
 
-	// Section header with push status
+	// Section header with push status (bold)
 	header := "Recent Commits"
 	if p.pushStatus != nil {
 		status := p.pushStatus.FormatAheadBehind()
@@ -365,7 +358,7 @@ func (p *Plugin) renderRecentCommits(currentY *int, maxVisible int) string {
 			header = fmt.Sprintf("Recent Commits %s", styles.StatusModified.Render(status))
 		}
 	}
-	sb.WriteString(styles.Subtitle.Render(header))
+	sb.WriteString(styles.Title.Render(header))
 	sb.WriteString("\n")
 	*currentY++
 
@@ -397,14 +390,6 @@ func (p *Plugin) renderRecentCommits(currentY *int, maxVisible int) string {
 		// Use absolute commit index for cursor comparison
 		selected := p.cursor == fileCount+i
 
-		// Cursor indicator
-		var cursor string
-		if selected {
-			cursor = styles.ListCursor.Render("> ")
-		} else {
-			cursor = "  "
-		}
-
 		// Push indicator: ↑ for unpushed, nothing for pushed
 		var indicator string
 		if !commit.Pushed {
@@ -413,9 +398,9 @@ func (p *Plugin) renderRecentCommits(currentY *int, maxVisible int) string {
 			indicator = "  " // Two spaces to align with indicator
 		}
 
-		// Format: "> ↑ abc1234 commit message..."
+		// Format: "↑ abc1234 commit message..."
 		hash := styles.Code.Render(commit.Hash[:7])
-		msgWidth := maxWidth - 14 // cursor + indicator + hash + space
+		msgWidth := maxWidth - 12 // indicator + hash + space
 		msg := commit.Subject
 		if len(msg) > msgWidth && msgWidth > 3 {
 			msg = msg[:msgWidth-1] + "…"
@@ -425,18 +410,17 @@ func (p *Plugin) renderRecentCommits(currentY *int, maxVisible int) string {
 		p.mouseHandler.HitMap.AddRect(regionCommit, 1, *currentY, p.sidebarWidth-2, 1, i)
 
 		if selected {
-			plainCursor := "> "
 			plainIndicator := "  "
 			if !commit.Pushed {
 				plainIndicator = "↑ "
 			}
-			plainLine := fmt.Sprintf("%s%s%s %s", plainCursor, plainIndicator, commit.Hash[:7], msg)
+			plainLine := fmt.Sprintf("%s%s %s", plainIndicator, commit.Hash[:7], msg)
 			if len(plainLine) < maxWidth {
 				plainLine += strings.Repeat(" ", maxWidth-len(plainLine))
 			}
 			sb.WriteString(styles.ListItemSelected.Render(plainLine))
 		} else {
-			sb.WriteString(styles.ListItemNormal.Render(fmt.Sprintf("%s%s%s %s", cursor, indicator, hash, msg)))
+			sb.WriteString(styles.ListItemNormal.Render(fmt.Sprintf("%s%s %s", indicator, hash, msg)))
 		}
 		*currentY++
 		if i < endIdx-1 {
@@ -616,12 +600,6 @@ func (p *Plugin) renderCommitPreview(visibleHeight int) string {
 
 // renderCommitPreviewFile renders a single file in the commit preview.
 func (p *Plugin) renderCommitPreviewFile(file CommitFile, selected bool, maxWidth int) string {
-	// Cursor indicator
-	cursor := "  "
-	if selected {
-		cursor = styles.ListCursor.Render("> ")
-	}
-
 	// Status indicator with color
 	var statusStyle lipgloss.Style
 	switch file.Status {
@@ -640,21 +618,20 @@ func (p *Plugin) renderCommitPreviewFile(file CommitFile, selected bool, maxWidt
 
 	// Path - truncate if needed
 	path := file.Path
-	pathWidth := maxWidth - 8 // cursor + status + spacing
+	pathWidth := maxWidth - 4 // status + spacing
 	if len(path) > pathWidth && pathWidth > 3 {
 		path = "…" + path[len(path)-pathWidth+1:]
 	}
 
 	if selected {
-		plainCursor := "> "
-		plainLine := fmt.Sprintf("%s%s %s", plainCursor, string(file.Status), path)
+		plainLine := fmt.Sprintf("%s %s", string(file.Status), path)
 		if len(plainLine) < maxWidth {
 			plainLine += strings.Repeat(" ", maxWidth-len(plainLine))
 		}
 		return styles.ListItemSelected.Render(plainLine)
 	}
 
-	return styles.ListItemNormal.Render(fmt.Sprintf("%s%s %s", cursor, status, path))
+	return styles.ListItemNormal.Render(fmt.Sprintf("%s %s", status, path))
 }
 
 // truncateStyledLine truncates a line that may contain ANSI codes to a visual width.

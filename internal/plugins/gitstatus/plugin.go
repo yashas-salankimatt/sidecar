@@ -1067,7 +1067,7 @@ func (p *Plugin) View(width, height int) string {
 	case ViewModeDiff:
 		content = p.renderDiffModal()
 	case ViewModeCommit:
-		content = p.renderCommit()
+		content = p.renderCommitModal()
 	case ViewModePushMenu:
 		content = p.renderPushMenu()
 	default:
@@ -1566,8 +1566,13 @@ func (p *Plugin) initCommitTextarea() {
 	p.commitMessage.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
 	p.commitMessage.Focus()
 	p.commitMessage.CharLimit = 0
-	p.commitMessage.SetWidth(60)
-	p.commitMessage.SetHeight(5)
+	// Size for modal: modalWidth - 6 (border+padding) - 2 (textarea internal padding)
+	textareaWidth := p.commitModalWidth() - 8
+	if textareaWidth < 40 {
+		textareaWidth = 40
+	}
+	p.commitMessage.SetWidth(textareaWidth)
+	p.commitMessage.SetHeight(4)
 	p.commitError = ""
 	p.commitButtonFocus = false
 }
