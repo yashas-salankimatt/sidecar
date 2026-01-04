@@ -96,12 +96,6 @@ func (p *Plugin) renderSection(title string, entries []*FileEntry, lineNum, glob
 
 // renderEntry renders a single file entry.
 func (p *Plugin) renderEntry(entry *FileEntry, selected bool) string {
-	// Cursor indicator
-	cursor := "  "
-	if selected {
-		cursor = styles.ListCursor.Render("> ")
-	}
-
 	// Status indicator
 	var statusStyle lipgloss.Style
 	switch entry.Status {
@@ -149,10 +143,9 @@ func (p *Plugin) renderEntry(entry *FileEntry, selected bool) string {
 
 	if selected {
 		// Build plain text and pad to full width
-		plainCursor := "> "
-		plainLine := fmt.Sprintf("%s%s %s%s", plainCursor, string(entry.Status), path, fmt.Sprintf(" +%d -%d", entry.DiffStats.Additions, entry.DiffStats.Deletions))
+		plainLine := fmt.Sprintf("%s %s%s", string(entry.Status), path, fmt.Sprintf(" +%d -%d", entry.DiffStats.Additions, entry.DiffStats.Deletions))
 		if entry.DiffStats.Additions == 0 && entry.DiffStats.Deletions == 0 {
-			plainLine = fmt.Sprintf("%s%s %s", plainCursor, string(entry.Status), path)
+			plainLine = fmt.Sprintf("%s %s", string(entry.Status), path)
 		}
 		maxWidth := p.width - 4
 		if len(plainLine) < maxWidth {
@@ -161,7 +154,7 @@ func (p *Plugin) renderEntry(entry *FileEntry, selected bool) string {
 		return styles.ListItemSelected.Render(plainLine)
 	}
 
-	return styles.ListItemNormal.Render(fmt.Sprintf("%s%s %s%s", cursor, status, path, stats))
+	return styles.ListItemNormal.Render(fmt.Sprintf("%s %s%s", status, path, stats))
 }
 
 // renderDiffModal renders the diff modal with panel border.

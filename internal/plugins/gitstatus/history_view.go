@@ -59,12 +59,6 @@ func (p *Plugin) renderHistory() string {
 
 // renderCommitLine renders a single commit entry.
 func (p *Plugin) renderCommitLine(c *Commit, selected bool) string {
-	// Cursor indicator
-	cursor := "  "
-	if selected {
-		cursor = styles.ListCursor.Render("> ")
-	}
-
 	// Push status indicator
 	var pushIndicator string
 	if !c.Pushed {
@@ -87,12 +81,11 @@ func (p *Plugin) renderCommitLine(c *Commit, selected bool) string {
 	timeStr := styles.Muted.Render(RelativeTime(c.Date))
 
 	if selected {
-		plainCursor := "> "
 		plainIndicator := "  "
 		if !c.Pushed {
 			plainIndicator = "↑ "
 		}
-		plainLine := fmt.Sprintf("%s%s%s %s  %s", plainCursor, plainIndicator, c.ShortHash, subject, RelativeTime(c.Date))
+		plainLine := fmt.Sprintf("%s%s %s  %s", plainIndicator, c.ShortHash, subject, RelativeTime(c.Date))
 		maxWidth := p.width - 4
 		if len(plainLine) < maxWidth {
 			plainLine += strings.Repeat(" ", maxWidth-len(plainLine))
@@ -100,7 +93,7 @@ func (p *Plugin) renderCommitLine(c *Commit, selected bool) string {
 		return styles.ListItemSelected.Render(plainLine)
 	}
 
-	return styles.ListItemNormal.Render(fmt.Sprintf("%s%s%s %s  %s", cursor, pushIndicator, hash, subject, timeStr))
+	return styles.ListItemNormal.Render(fmt.Sprintf("%s%s %s  %s", pushIndicator, hash, subject, timeStr))
 }
 
 // renderCommitDetail renders the commit detail view.
@@ -206,12 +199,6 @@ func (p *Plugin) renderCommitDetail() string {
 
 // renderCommitFile renders a single file in commit detail.
 func (p *Plugin) renderCommitFile(f CommitFile, selected bool) string {
-	// Cursor
-	cursor := "  "
-	if selected {
-		cursor = styles.ListCursor.Render("> ")
-	}
-
 	// Path
 	path := f.Path
 	if f.OldPath != "" {
@@ -239,12 +226,11 @@ func (p *Plugin) renderCommitFile(f CommitFile, selected bool) string {
 	}
 
 	if selected {
-		plainCursor := "> "
 		plainStats := ""
 		if f.Additions > 0 || f.Deletions > 0 {
 			plainStats = fmt.Sprintf(" +%d -%d", f.Additions, f.Deletions)
 		}
-		plainLine := fmt.Sprintf("%s%s%s", plainCursor, path, plainStats)
+		plainLine := fmt.Sprintf("%s%s", path, plainStats)
 		maxWidth := p.width - 4
 		if len(plainLine) < maxWidth {
 			plainLine += strings.Repeat(" ", maxWidth-len(plainLine))
@@ -252,5 +238,5 @@ func (p *Plugin) renderCommitFile(f CommitFile, selected bool) string {
 		return styles.ListItemSelected.Render(plainLine)
 	}
 
-	return styles.ListItemNormal.Render(fmt.Sprintf("%s%s%s", cursor, path, stats))
+	return styles.ListItemNormal.Render(fmt.Sprintf("%s%s", path, stats))
 }

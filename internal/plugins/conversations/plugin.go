@@ -473,6 +473,14 @@ func (p *Plugin) updateSessions(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 		// Toggle global analytics view
 		p.view = ViewAnalytics
 		return p, nil
+
+	case "y":
+		// Yank session details to clipboard
+		return p, p.yankSessionDetails()
+
+	case "Y":
+		// Yank resume command to clipboard
+		return p, p.yankResumeCommand()
 	}
 
 	return p, nil
@@ -825,6 +833,14 @@ func (p *Plugin) updateMessages(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 	case " ":
 		// Load more messages (would need to implement paging in adapter)
 		return p, nil
+
+	case "y":
+		// Yank current turn content to clipboard
+		return p, p.yankTurnContent()
+
+	case "Y":
+		// Yank resume command to clipboard
+		return p, p.yankResumeCommand()
 	}
 
 	return p, nil
@@ -893,14 +909,16 @@ func (p *Plugin) Commands() []plugin.Command {
 		return []plugin.Command{
 			{ID: "back", Name: "Back", Description: "Return to messages", Category: plugin.CategoryNavigation, Context: "message-detail", Priority: 1},
 			{ID: "scroll", Name: "Scroll", Description: "Scroll message", Category: plugin.CategoryNavigation, Context: "message-detail", Priority: 2},
+			{ID: "yank", Name: "Yank", Description: "Yank turn content", Category: plugin.CategoryActions, Context: "message-detail", Priority: 3},
+			{ID: "yank-resume", Name: "Resume", Description: "Yank resume command", Category: plugin.CategoryActions, Context: "message-detail", Priority: 3},
 		}
 	}
 	if p.view == ViewMessages || (p.twoPane && p.activePane == PaneMessages) {
 		return []plugin.Command{
 			{ID: "back", Name: "Back", Description: "Return to session list", Category: plugin.CategoryNavigation, Context: "conversation-detail", Priority: 1},
-			{ID: "copy", Name: "Copy", Description: "Copy message to clipboard", Category: plugin.CategoryActions, Context: "conversation-detail", Priority: 2},
 			{ID: "detail", Name: "Detail", Description: "View message details", Category: plugin.CategoryView, Context: "conversation-detail", Priority: 2},
-			{ID: "export", Name: "Export", Description: "Export conversation", Category: plugin.CategoryActions, Context: "conversation-detail", Priority: 3},
+			{ID: "yank", Name: "Yank", Description: "Yank turn content", Category: plugin.CategoryActions, Context: "conversation-detail", Priority: 3},
+			{ID: "yank-resume", Name: "Resume", Description: "Yank resume command", Category: plugin.CategoryActions, Context: "conversation-detail", Priority: 3},
 		}
 	}
 	if p.view == ViewAnalytics {
@@ -912,7 +930,8 @@ func (p *Plugin) Commands() []plugin.Command {
 		{ID: "view-session", Name: "View", Description: "View session messages", Category: plugin.CategoryView, Context: "conversations", Priority: 1},
 		{ID: "search", Name: "Search", Description: "Search conversations", Category: plugin.CategorySearch, Context: "conversations", Priority: 2},
 		{ID: "filter", Name: "Filter", Description: "Filter by project", Category: plugin.CategorySearch, Context: "conversations", Priority: 2},
-		{ID: "analytics", Name: "Stats", Description: "View usage analytics", Category: plugin.CategoryView, Context: "conversations", Priority: 3},
+		{ID: "yank", Name: "Yank", Description: "Yank session details", Category: plugin.CategoryActions, Context: "conversations", Priority: 3},
+		{ID: "yank-resume", Name: "Resume", Description: "Yank resume command", Category: plugin.CategoryActions, Context: "conversations", Priority: 3},
 	}
 }
 
@@ -1275,6 +1294,14 @@ func (p *Plugin) updateMessageDetail(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 		if p.detailScroll < 0 {
 			p.detailScroll = 0
 		}
+
+	case "y":
+		// Yank current turn content to clipboard
+		return p, p.yankTurnContent()
+
+	case "Y":
+		// Yank resume command to clipboard
+		return p, p.yankResumeCommand()
 	}
 	return p, nil
 }
