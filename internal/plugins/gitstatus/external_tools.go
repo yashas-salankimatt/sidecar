@@ -4,9 +4,17 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 )
+
+// terminalModeRegex matches terminal escape sequences that can interfere with bubbletea.
+// This includes:
+// - Mouse mode: \x1b[?1000h through \x1b[?1006h/l (enable/disable various mouse modes)
+// - Alternate screen: \x1b[?1049h/l (switch to/from alternate screen buffer)
+// - Bracketed paste: \x1b[?2004h/l (enable/disable bracketed paste mode)
+var terminalModeRegex = regexp.MustCompile(`\x1b\[\?(100[0-6]|1049|2004)[hl]`)
 
 // ExternalToolMode specifies which diff renderer to use.
 type ExternalToolMode string
@@ -85,7 +93,9 @@ func (e *ExternalTool) RenderWithDelta(rawDiff string, sideBySide bool, width in
 		return rawDiff, nil
 	}
 
-	return stdout.String(), nil
+	// Strip any terminal mode escape sequences that could interfere with bubbletea
+	output := terminalModeRegex.ReplaceAllString(stdout.String(), "")
+	return output, nil
 }
 
 // ShouldShowTip returns true if we should show the delta install tip.

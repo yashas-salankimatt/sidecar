@@ -26,12 +26,14 @@ const (
 type ViewMode int
 
 const (
-	ViewModeStatus       ViewMode = iota // Current file list (three-pane layout)
-	ViewModeHistory                      // Commit browser
-	ViewModeCommitDetail                 // Single commit files
-	ViewModeDiff                         // Full-screen diff view (from history)
-	ViewModeCommit                       // Commit message editor
-	ViewModePushMenu                     // Push options popup menu
+	ViewModeStatus         ViewMode = iota // Current file list (three-pane layout)
+	ViewModeHistory                        // Commit browser
+	ViewModeCommitDetail                   // Single commit files
+	ViewModeDiff                           // Full-screen diff view (from history)
+	ViewModeCommit                         // Commit message editor
+	ViewModePushMenu                       // Push options popup menu
+	ViewModeConfirmDiscard                 // Confirm discard changes modal
+	ViewModeBranchPicker                   // Branch selection modal
 )
 
 // FocusPane represents which pane is active in the three-pane view.
@@ -63,10 +65,11 @@ type Plugin struct {
 	loadingMoreCommits bool      // Prevents duplicate load-more requests
 
 	// Inline diff state (for three-pane view)
-	selectedDiffFile    string      // File being previewed in diff pane
-	diffPaneScroll      int         // Vertical scroll for inline diff
-	diffPaneHorizScroll int         // Horizontal scroll for inline diff
-	diffPaneParsedDiff  *ParsedDiff // Parsed diff for inline view
+	selectedDiffFile    string       // File being previewed in diff pane
+	diffPaneScroll      int          // Vertical scroll for inline diff
+	diffPaneHorizScroll int          // Horizontal scroll for inline diff
+	diffPaneParsedDiff  *ParsedDiff  // Parsed diff for inline view
+	diffPaneViewMode    DiffViewMode // Unified or side-by-side for inline diff
 
 	// Commit preview state (for three-pane view when on commit)
 	previewCommit       *Commit // Commit being previewed in right pane
@@ -120,6 +123,26 @@ type Plugin struct {
 
 	// Mouse support
 	mouseHandler *mouse.Handler
+
+	// Discard confirm state
+	discardFile       *FileEntry // File being confirmed for discard
+	discardReturnMode ViewMode   // Mode to return to when modal closes
+
+	// Stash state
+	stashList *StashList // Cached stash list
+
+	// Branch picker state
+	branches         []*Branch // List of branches
+	branchCursor     int       // Current cursor position
+	branchReturnMode ViewMode  // Mode to return to when modal closes
+
+	// Fetch/Pull state
+	fetchInProgress bool
+	pullInProgress  bool
+	fetchSuccess    bool
+	pullSuccess     bool
+	fetchError      string
+	pullError       string
 }
 
 // New creates a new git status plugin.
@@ -173,6 +196,7 @@ func (p *Plugin) Start() tea.Cmd {
 		p.refresh(),
 		p.startWatcher(),
 		p.loadRecentCommits(),
+		p.loadStashList(),
 	)
 }
 
@@ -200,6 +224,10 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			return p.updateCommit(msg)
 		case ViewModePushMenu:
 			return p.updatePushMenu(msg)
+		case ViewModeConfirmDiscard:
+			return p.updateConfirmDiscard(msg)
+		case ViewModeBranchPicker:
+			return p.updateBranchPicker(msg)
 		}
 
 	case tea.MouseMsg:
@@ -251,12 +279,9 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 	case DiffLoadedMsg:
 		p.diffContent = msg.Content
 		p.diffRaw = msg.Raw
-		// Parse diff for built-in rendering (when not using delta)
-		if p.externalTool == nil || !p.externalTool.ShouldUseDelta() {
-			p.parsedDiff, _ = ParseUnifiedDiff(msg.Raw)
-		} else {
-			p.parsedDiff = nil
-		}
+		// Always parse diff for built-in rendering (even if delta is available)
+		// This allows toggling between delta and built-in rendering at runtime
+		p.parsedDiff, _ = ParseUnifiedDiff(msg.Raw)
 		return p, nil
 
 	case HistoryLoadedMsg:
@@ -333,6 +358,70 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 
 	case PushSuccessClearMsg:
 		p.pushSuccess = false
+		return p, nil
+
+	case StashListLoadedMsg:
+		p.stashList = msg.List
+		return p, nil
+
+	case StashSuccessMsg:
+		// Stash operation succeeded, refresh state
+		return p, tea.Batch(p.refresh(), p.loadRecentCommits(), p.loadStashList())
+
+	case StashErrorMsg:
+		// TODO: Show error in UI
+		return p, nil
+
+	case BranchListLoadedMsg:
+		p.branches = msg.Branches
+		// Position cursor on current branch
+		for i, b := range p.branches {
+			if b.IsCurrent {
+				p.branchCursor = i
+				break
+			}
+		}
+		return p, nil
+
+	case BranchSwitchSuccessMsg:
+		// Branch switched, close picker and refresh
+		p.viewMode = p.branchReturnMode
+		p.branches = nil
+		return p, tea.Batch(p.refresh(), p.loadRecentCommits())
+
+	case BranchErrorMsg:
+		// TODO: Show error in UI
+		return p, nil
+
+	case FetchSuccessMsg:
+		p.fetchInProgress = false
+		p.fetchSuccess = true
+		p.fetchError = ""
+		// Refresh to show updated ahead/behind
+		return p, tea.Batch(p.refresh(), p.loadRecentCommits(), p.clearFetchSuccessAfterDelay())
+
+	case FetchErrorMsg:
+		p.fetchInProgress = false
+		p.fetchError = msg.Err.Error()
+		return p, nil
+
+	case PullSuccessMsg:
+		p.pullInProgress = false
+		p.pullSuccess = true
+		p.pullError = ""
+		return p, tea.Batch(p.refresh(), p.loadRecentCommits(), p.clearPullSuccessAfterDelay())
+
+	case PullErrorMsg:
+		p.pullInProgress = false
+		p.pullError = msg.Err.Error()
+		return p, nil
+
+	case FetchSuccessClearMsg:
+		p.fetchSuccess = false
+		return p, nil
+
+	case PullSuccessClearMsg:
+		p.pullSuccess = false
 		return p, nil
 
 	case tea.WindowSizeMsg:
@@ -573,6 +662,56 @@ func (p *Plugin) updateStatus(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 		if p.cursorOnCommit() {
 			return p, p.copyCommitIDToClipboard()
 		}
+
+	case "D":
+		// Discard changes (confirm modal) - only for modified/staged files, not commits
+		if !p.cursorOnCommit() && len(entries) > 0 && p.cursor < len(entries) {
+			entry := entries[p.cursor]
+			// Don't allow discard on untracked folders (would delete)
+			if entry.IsFolder && entry.Status == StatusUntracked {
+				return p, nil
+			}
+			p.discardFile = entry
+			p.discardReturnMode = p.viewMode
+			p.viewMode = ViewModeConfirmDiscard
+		}
+
+	case "z":
+		// Stash current changes (if there are any)
+		if p.tree.TotalCount() > 0 {
+			return p, p.doStashPush()
+		}
+
+	case "Z":
+		// Pop latest stash (if there are stashes)
+		if p.stashList != nil && p.stashList.Count() > 0 {
+			return p, p.doStashPop()
+		}
+
+	case "b":
+		// Open branch picker
+		p.branchReturnMode = p.viewMode
+		p.branchCursor = 0
+		p.viewMode = ViewModeBranchPicker
+		return p, p.loadBranches()
+
+	case "f":
+		// Fetch from remote
+		if !p.fetchInProgress {
+			p.fetchInProgress = true
+			p.fetchError = ""
+			p.fetchSuccess = false
+			return p, p.doFetch()
+		}
+
+	case "p":
+		// Pull from remote (only if no local changes to avoid conflicts)
+		if !p.pullInProgress {
+			p.pullInProgress = true
+			p.pullError = ""
+			p.pullSuccess = false
+			return p, p.doPull()
+		}
 	}
 
 	return p, nil
@@ -660,11 +799,11 @@ func (p *Plugin) updateStatusDiffPane(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 		p.diffPaneHorizScroll = 0
 
 	case "v":
-		// Toggle view mode (unified/side-by-side) - affects all diff views
-		if p.diffViewMode == DiffViewUnified {
-			p.diffViewMode = DiffViewSideBySide
+		// Toggle view mode (unified/side-by-side) for inline diff pane
+		if p.diffPaneViewMode == DiffViewUnified {
+			p.diffPaneViewMode = DiffViewSideBySide
 		} else {
-			p.diffViewMode = DiffViewUnified
+			p.diffPaneViewMode = DiffViewUnified
 		}
 
 	case "tab":
@@ -1075,6 +1214,10 @@ func (p *Plugin) View(width, height int) string {
 		content = p.renderCommitModal()
 	case ViewModePushMenu:
 		content = p.renderPushMenu()
+	case ViewModeConfirmDiscard:
+		content = p.renderConfirmDiscard()
+	case ViewModeBranchPicker:
+		content = p.renderBranchPicker()
 	default:
 		// Use three-pane layout for status view
 		content = p.renderThreePaneView()
@@ -1103,6 +1246,12 @@ func (p *Plugin) Commands() []plugin.Command {
 		{ID: "push", Name: "Push", Description: "Push commits to remote", Category: plugin.CategoryGit, Context: "git-status", Priority: 2},
 		{ID: "show-history", Name: "History", Description: "View commit history", Category: plugin.CategoryView, Context: "git-status", Priority: 3},
 		{ID: "open-file", Name: "Open", Description: "Open file in editor", Category: plugin.CategoryActions, Context: "git-status", Priority: 3},
+		{ID: "discard-changes", Name: "Discard", Description: "Discard changes to file", Category: plugin.CategoryGit, Context: "git-status", Priority: 3},
+		{ID: "stash", Name: "Stash", Description: "Stash changes", Category: plugin.CategoryGit, Context: "git-status", Priority: 3},
+		{ID: "stash-pop", Name: "Pop", Description: "Pop latest stash", Category: plugin.CategoryGit, Context: "git-status", Priority: 3},
+		{ID: "branch-picker", Name: "Branch", Description: "Switch branch", Category: plugin.CategoryGit, Context: "git-status", Priority: 3},
+		{ID: "fetch", Name: "Fetch", Description: "Fetch from remote", Category: plugin.CategoryGit, Context: "git-status", Priority: 3},
+		{ID: "pull", Name: "Pull", Description: "Pull from remote", Category: plugin.CategoryGit, Context: "git-status", Priority: 3},
 		{ID: "open-in-file-browser", Name: "Browse", Description: "Open file in file browser", Category: plugin.CategoryNavigation, Context: "git-status", Priority: 4},
 		// git-status-commits context (recent commits in sidebar)
 		{ID: "view-commit", Name: "View", Description: "View commit details", Category: plugin.CategoryView, Context: "git-status-commits", Priority: 1},
@@ -1126,6 +1275,9 @@ func (p *Plugin) Commands() []plugin.Command {
 		{ID: "back", Name: "Back", Description: "Return to sidebar", Category: plugin.CategoryNavigation, Context: "git-commit-preview", Priority: 1},
 		{ID: "yank-commit", Name: "Yank", Description: "Copy commit as markdown", Category: plugin.CategoryActions, Context: "git-commit-preview", Priority: 3},
 		{ID: "yank-id", Name: "YankID", Description: "Copy commit ID", Category: plugin.CategoryActions, Context: "git-commit-preview", Priority: 3},
+		// git-status-diff context (inline diff pane)
+		{ID: "toggle-diff-view", Name: "View", Description: "Toggle unified/split diff view", Category: plugin.CategoryView, Context: "git-status-diff", Priority: 2},
+		{ID: "toggle-sidebar", Name: "Panel", Description: "Toggle sidebar visibility", Category: plugin.CategoryView, Context: "git-status-diff", Priority: 3},
 		// git-diff context
 		{ID: "close-diff", Name: "Close", Description: "Close diff view", Category: plugin.CategoryView, Context: "git-diff", Priority: 1},
 		{ID: "scroll", Name: "Scroll", Description: "Scroll diff content", Category: plugin.CategoryNavigation, Context: "git-diff", Priority: 2},
@@ -1396,6 +1548,62 @@ type PushStatusLoadedMsg struct {
 // PushSuccessClearMsg is sent to clear the push success indicator.
 type PushSuccessClearMsg struct{}
 
+// StashListLoadedMsg is sent when stash list is loaded.
+type StashListLoadedMsg struct {
+	List *StashList
+}
+
+// StashSuccessMsg is sent when a stash operation succeeds.
+type StashSuccessMsg struct {
+	Operation string // "push", "pop", "apply", "drop"
+}
+
+// StashErrorMsg is sent when a stash operation fails.
+type StashErrorMsg struct {
+	Err error
+}
+
+// BranchListLoadedMsg is sent when branch list is loaded.
+type BranchListLoadedMsg struct {
+	Branches []*Branch
+}
+
+// BranchSwitchSuccessMsg is sent when branch switch succeeds.
+type BranchSwitchSuccessMsg struct {
+	Branch string
+}
+
+// BranchErrorMsg is sent when a branch operation fails.
+type BranchErrorMsg struct {
+	Err error
+}
+
+// FetchSuccessMsg is sent when fetch succeeds.
+type FetchSuccessMsg struct {
+	Output string
+}
+
+// FetchErrorMsg is sent when fetch fails.
+type FetchErrorMsg struct {
+	Err error
+}
+
+// PullSuccessMsg is sent when pull succeeds.
+type PullSuccessMsg struct {
+	Output string
+}
+
+// PullErrorMsg is sent when pull fails.
+type PullErrorMsg struct {
+	Err error
+}
+
+// FetchSuccessClearMsg is sent to clear the fetch success indicator.
+type FetchSuccessClearMsg struct{}
+
+// PullSuccessClearMsg is sent to clear the pull success indicator.
+type PullSuccessClearMsg struct{}
+
 // loadHistory loads commit history with push status.
 func (p *Plugin) loadHistory() tea.Cmd {
 	workDir := p.ctx.WorkDir
@@ -1438,6 +1646,18 @@ func (p *Plugin) loadRecentCommits() tea.Cmd {
 			return RecentCommitsLoadedMsg{Commits: nil, PushStatus: nil}
 		}
 		return RecentCommitsLoadedMsg{Commits: commits, PushStatus: pushStatus}
+	}
+}
+
+// loadStashList loads the stash list.
+func (p *Plugin) loadStashList() tea.Cmd {
+	workDir := p.ctx.WorkDir
+	return func() tea.Msg {
+		list, err := GetStashList(workDir)
+		if err != nil {
+			return StashListLoadedMsg{List: nil}
+		}
+		return StashListLoadedMsg{List: list}
 	}
 }
 
@@ -1725,4 +1945,110 @@ func (p *Plugin) clearPushSuccessAfterDelay() tea.Cmd {
 // canPush returns true if there are commits that can be pushed.
 func (p *Plugin) canPush() bool {
 	return p.pushStatus != nil && p.pushStatus.CanPush()
+}
+
+// doStashPush stashes all current changes.
+func (p *Plugin) doStashPush() tea.Cmd {
+	workDir := p.ctx.WorkDir
+	return func() tea.Msg {
+		err := StashPush(workDir)
+		if err != nil {
+			return StashErrorMsg{Err: err}
+		}
+		return StashSuccessMsg{Operation: "push"}
+	}
+}
+
+// doStashPop pops the latest stash.
+func (p *Plugin) doStashPop() tea.Cmd {
+	workDir := p.ctx.WorkDir
+	return func() tea.Msg {
+		err := StashPop(workDir)
+		if err != nil {
+			return StashErrorMsg{Err: err}
+		}
+		return StashSuccessMsg{Operation: "pop"}
+	}
+}
+
+// doFetch fetches from remote.
+func (p *Plugin) doFetch() tea.Cmd {
+	workDir := p.ctx.WorkDir
+	return func() tea.Msg {
+		output, err := ExecuteFetch(workDir)
+		if err != nil {
+			return FetchErrorMsg{Err: err}
+		}
+		return FetchSuccessMsg{Output: output}
+	}
+}
+
+// doPull pulls from remote.
+func (p *Plugin) doPull() tea.Cmd {
+	workDir := p.ctx.WorkDir
+	return func() tea.Msg {
+		output, err := ExecutePull(workDir)
+		if err != nil {
+			return PullErrorMsg{Err: err}
+		}
+		return PullSuccessMsg{Output: output}
+	}
+}
+
+// clearFetchSuccessAfterDelay returns a command that clears the fetch success indicator after 3 seconds.
+func (p *Plugin) clearFetchSuccessAfterDelay() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return FetchSuccessClearMsg{}
+	})
+}
+
+// clearPullSuccessAfterDelay returns a command that clears the pull success indicator after 3 seconds.
+func (p *Plugin) clearPullSuccessAfterDelay() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return PullSuccessClearMsg{}
+	})
+}
+
+// updateConfirmDiscard handles key events in the confirm discard modal.
+func (p *Plugin) updateConfirmDiscard(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "n", "N", "q":
+		// Cancel discard
+		p.viewMode = p.discardReturnMode
+		p.discardFile = nil
+		return p, nil
+	case "y", "Y", "enter":
+		// Confirm discard
+		if p.discardFile != nil {
+			entry := p.discardFile
+			p.viewMode = p.discardReturnMode
+			p.discardFile = nil
+			return p, p.doDiscard(entry)
+		}
+		p.viewMode = p.discardReturnMode
+		return p, nil
+	}
+	return p, nil
+}
+
+// doDiscard executes the git discard operation.
+func (p *Plugin) doDiscard(entry *FileEntry) tea.Cmd {
+	workDir := p.ctx.WorkDir
+	return func() tea.Msg {
+		var err error
+		if entry.Status == StatusUntracked {
+			// Remove untracked file
+			err = DiscardUntracked(workDir, entry.Path)
+		} else if entry.Staged {
+			// Unstage and restore staged file
+			err = DiscardStaged(workDir, entry.Path)
+		} else {
+			// Restore modified file
+			err = DiscardModified(workDir, entry.Path)
+		}
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return RefreshDoneMsg{}
+	}
 }

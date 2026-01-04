@@ -3,6 +3,7 @@ package gitstatus
 import (
 	"bufio"
 	"bytes"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -478,4 +479,31 @@ type CommitError struct {
 
 func (e *CommitError) Error() string {
 	return strings.TrimSpace(e.Output)
+}
+
+// DiscardModified discards unstaged changes to a modified file.
+func DiscardModified(workDir, path string) error {
+	cmd := exec.Command("git", "restore", path)
+	cmd.Dir = workDir
+	return cmd.Run()
+}
+
+// DiscardStaged discards staged changes to a file (unstages and restores).
+func DiscardStaged(workDir, path string) error {
+	// First unstage
+	cmd := exec.Command("git", "restore", "--staged", path)
+	cmd.Dir = workDir
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	// Then restore working tree
+	cmd = exec.Command("git", "restore", path)
+	cmd.Dir = workDir
+	return cmd.Run()
+}
+
+// DiscardUntracked removes an untracked file.
+func DiscardUntracked(workDir, path string) error {
+	fullPath := filepath.Join(workDir, path)
+	return os.Remove(fullPath)
 }

@@ -205,30 +205,30 @@ func (p *Plugin) renderDiffModal() string {
 		useDelta := p.externalTool != nil && p.externalTool.ShouldUseDelta()
 
 		if p.diffViewMode == DiffViewSideBySide {
-			if useDelta {
-				// Use delta's side-by-side mode
+			// Prefer built-in side-by-side renderer for consistency
+			parsed := p.parsedDiff
+			if parsed == nil {
+				parsed, _ = ParseUnifiedDiff(p.diffRaw)
+			}
+			if parsed != nil {
+				sb.WriteString(RenderSideBySide(parsed, contentWidth, p.diffScroll, visibleLines, p.diffHorizOff))
+				return p.wrapDiffContent(sb.String(), paneHeight)
+			} else if useDelta {
+				// Fall back to delta if parsing failed
 				rendered, _ := p.externalTool.RenderWithDelta(p.diffRaw, true, contentWidth)
 				displayContent = rendered
 			} else {
-				// Use built-in side-by-side renderer
-				parsed := p.parsedDiff
-				if parsed == nil {
-					parsed, _ = ParseUnifiedDiff(p.diffRaw)
-				}
-				if parsed != nil {
-					sb.WriteString(RenderSideBySide(parsed, contentWidth, p.diffScroll, visibleLines, p.diffHorizOff))
-				} else {
-					sb.WriteString(styles.Muted.Render("Unable to parse diff for side-by-side view"))
-				}
+				sb.WriteString(styles.Muted.Render("Unable to parse diff for side-by-side view"))
 				return p.wrapDiffContent(sb.String(), paneHeight)
 			}
 		} else {
-			// Unified view
-			if useDelta && p.diffContent != p.diffRaw {
-				displayContent = p.diffContent
-			} else if p.parsedDiff != nil {
+			// Unified view - prefer built-in renderer for consistency with inline diff pane
+			if p.parsedDiff != nil {
 				sb.WriteString(RenderLineDiff(p.parsedDiff, contentWidth, p.diffScroll, visibleLines, p.diffHorizOff))
 				return p.wrapDiffContent(sb.String(), paneHeight)
+			} else if useDelta && p.diffContent != p.diffRaw {
+				// Fall back to delta if parsing failed
+				displayContent = p.diffContent
 			} else {
 				displayContent = p.diffRaw
 			}

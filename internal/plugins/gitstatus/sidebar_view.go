@@ -141,6 +141,10 @@ func (p *Plugin) renderSidebar(visibleHeight int) string {
 			branch := p.pushStatus.CurrentBranch
 			// "Files " = 6 chars, leave 4 for padding = max branch length is sidebarWidth - 10
 			maxLen := p.sidebarWidth - 10
+			// If we have stashes, reserve space for stash indicator
+			if p.stashList != nil && p.stashList.Count() > 0 {
+				maxLen -= 6 // " [n]" space
+			}
 			if maxLen > 0 && len(branch) > maxLen {
 				branch = branch[:maxLen-1] + "…"
 			}
@@ -148,6 +152,13 @@ func (p *Plugin) renderSidebar(visibleHeight int) string {
 		} else if p.pushStatus.DetachedHead {
 			header += " " + styles.Muted.Render("(detached)")
 		}
+	}
+	// Add stash count indicator if there are stashes
+	if p.stashList != nil && p.stashList.Count() > 0 {
+		stashBadge := lipgloss.NewStyle().
+			Foreground(styles.StatusModified.GetForeground()).
+			Bold(true)
+		header += " " + stashBadge.Render(fmt.Sprintf("[%d]", p.stashList.Count()))
 	}
 	sb.WriteString(header)
 	sb.WriteString("\n\n")
@@ -204,13 +215,29 @@ func (p *Plugin) renderSidebar(visibleHeight int) string {
 	sb.WriteString("\n")
 	currentY++
 
-	// Push status/error message
+	// Remote operation status (push/fetch/pull)
 	if p.pushInProgress {
 		sb.WriteString(styles.StatusInProgress.Render("Pushing..."))
 		sb.WriteString("\n")
 		currentY++
+	} else if p.fetchInProgress {
+		sb.WriteString(styles.StatusInProgress.Render("Fetching..."))
+		sb.WriteString("\n")
+		currentY++
+	} else if p.pullInProgress {
+		sb.WriteString(styles.StatusInProgress.Render("Pulling..."))
+		sb.WriteString("\n")
+		currentY++
 	} else if p.pushSuccess {
 		sb.WriteString(styles.StatusStaged.Render("✓ Pushed"))
+		sb.WriteString("\n")
+		currentY++
+	} else if p.fetchSuccess {
+		sb.WriteString(styles.StatusStaged.Render("✓ Fetched"))
+		sb.WriteString("\n")
+		currentY++
+	} else if p.pullSuccess {
+		sb.WriteString(styles.StatusStaged.Render("✓ Pulled"))
 		sb.WriteString("\n")
 		currentY++
 	} else if p.pushError != "" {
@@ -223,15 +250,48 @@ func (p *Plugin) renderSidebar(visibleHeight int) string {
 		sb.WriteString(styles.StatusDeleted.Render("✗ " + errMsg))
 		sb.WriteString("\n")
 		currentY++
+	} else if p.fetchError != "" {
+		errMsg := p.fetchError
+		maxLen := p.sidebarWidth - 8
+		if len(errMsg) > maxLen && maxLen > 3 {
+			errMsg = errMsg[:maxLen-3] + "..."
+		}
+		sb.WriteString(styles.StatusDeleted.Render("✗ " + errMsg))
+		sb.WriteString("\n")
+		currentY++
+	} else if p.pullError != "" {
+		errMsg := p.pullError
+		maxLen := p.sidebarWidth - 8
+		if len(errMsg) > maxLen && maxLen > 3 {
+			errMsg = errMsg[:maxLen-3] + "..."
+		}
+		sb.WriteString(styles.StatusDeleted.Render("✗ " + errMsg))
+		sb.WriteString("\n")
+		currentY++
 	}
 
 	// Recent commits section
 	// Calculate available height for commits (remaining space minus header line)
-	commitsAvailable := visibleHeight - currentY + 3 - 1 // +3 to account for initial offset, -1 for header
+	// If we have stashes, reserve some space for them
+	stashReserve := 0
+	if p.stashList != nil && p.stashList.Count() > 0 {
+		stashReserve = 3 // header + 2 stash entries
+		if p.stashList.Count() > 2 {
+			stashReserve = 4 // +1 for "more..." indicator
+		}
+	}
+	commitsAvailable := visibleHeight - currentY + 3 - 1 - stashReserve // +3 to account for initial offset, -1 for header
 	if commitsAvailable < 2 {
 		commitsAvailable = 2
 	}
 	sb.WriteString(p.renderRecentCommits(&currentY, commitsAvailable))
+
+	// Stash section (if any stashes exist)
+	if p.stashList != nil && p.stashList.Count() > 0 {
+		sb.WriteString("\n")
+		currentY++
+		sb.WriteString(p.renderStashSection(&currentY, stashReserve-1)) // -1 for separator
+	}
 
 	return sb.String()
 }
@@ -432,6 +492,60 @@ func (p *Plugin) renderRecentCommits(currentY *int, maxVisible int) string {
 	return sb.String()
 }
 
+// renderStashSection renders the stash list in the sidebar.
+func (p *Plugin) renderStashSection(currentY *int, maxVisible int) string {
+	if p.stashList == nil || p.stashList.Count() == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	maxWidth := p.sidebarWidth - 4
+
+	// Section header with stash count
+	header := fmt.Sprintf("Stashes (%d)", p.stashList.Count())
+	sb.WriteString(styles.Subtitle.Render(header))
+	sb.WriteString("\n")
+	*currentY++
+
+	// Show visible stashes
+	count := p.stashList.Count()
+	visible := maxVisible - 1 // -1 for header
+	if visible < 1 {
+		visible = 1
+	}
+	if visible > count {
+		visible = count
+	}
+
+	for i := 0; i < visible; i++ {
+		stash := p.stashList.Stashes[i]
+
+		// Format: stash@{n}: message
+		ref := styles.Code.Render(stash.Ref)
+		msg := stash.Message
+		msgWidth := maxWidth - len(stash.Ref) - 3
+		if len(msg) > msgWidth && msgWidth > 3 {
+			msg = msg[:msgWidth-1] + "…"
+		}
+
+		line := fmt.Sprintf("%s %s", ref, msg)
+		sb.WriteString(styles.ListItemNormal.Render(line))
+		*currentY++
+		if i < visible-1 {
+			sb.WriteString("\n")
+		}
+	}
+
+	// Show "more" indicator if there are more stashes
+	if count > visible {
+		sb.WriteString("\n")
+		sb.WriteString(styles.Muted.Render(fmt.Sprintf("  +%d more", count-visible)))
+		*currentY++
+	}
+
+	return sb.String()
+}
+
 // renderDiffPane renders the right diff pane.
 func (p *Plugin) renderDiffPane(visibleHeight int) string {
 	// If previewing a commit, render commit preview instead of diff
@@ -441,11 +555,16 @@ func (p *Plugin) renderDiffPane(visibleHeight int) string {
 
 	var sb strings.Builder
 
-	// Header
+	// Header with view mode indicator
+	viewModeStr := "unified"
+	if p.diffPaneViewMode == DiffViewSideBySide {
+		viewModeStr = "split"
+	}
 	header := "Diff"
 	if p.selectedDiffFile != "" {
-		header = truncateDiffPath(p.selectedDiffFile, p.diffPaneWidth-6)
+		header = truncateDiffPath(p.selectedDiffFile, p.diffPaneWidth-14) // Leave room for mode
 	}
+	header = fmt.Sprintf("%s [%s]", header, viewModeStr)
 	sb.WriteString(styles.Title.Render(header))
 	sb.WriteString("\n\n")
 
@@ -472,8 +591,13 @@ func (p *Plugin) renderDiffPane(visibleHeight int) string {
 		diffWidth = 40
 	}
 
-	// Render diff and apply MaxWidth to prevent any line wrapping
-	diffContent := RenderLineDiff(p.diffPaneParsedDiff, diffWidth, p.diffPaneScroll, contentHeight, p.diffPaneHorizScroll)
+	// Render diff based on view mode
+	var diffContent string
+	if p.diffPaneViewMode == DiffViewSideBySide {
+		diffContent = RenderSideBySide(p.diffPaneParsedDiff, diffWidth, p.diffPaneScroll, contentHeight, p.diffPaneHorizScroll)
+	} else {
+		diffContent = RenderLineDiff(p.diffPaneParsedDiff, diffWidth, p.diffPaneScroll, contentHeight, p.diffPaneHorizScroll)
+	}
 	// Force truncate each line to prevent wrapping
 	lines := strings.Split(diffContent, "\n")
 	for i, line := range lines {
@@ -509,33 +633,47 @@ func (p *Plugin) renderCommitPreview(visibleHeight int) string {
 		diffPaneX = p.sidebarWidth + dividerWidth + 1 // sidebar + divider + pane border
 	}
 
-	// Header with commit hash
-	header := fmt.Sprintf("Commit %s", c.ShortHash)
-	sb.WriteString(styles.Title.Render(header))
+	// Commit hash badge style
+	hashBadge := lipgloss.NewStyle().
+		Foreground(styles.Accent).
+		Background(styles.BgSecondary).
+		Padding(0, 1).
+		Bold(true)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(styles.TextMuted)
+
+	// Header with styled commit hash
+	sb.WriteString(styles.Title.Render("Commit "))
+	sb.WriteString(hashBadge.Render(c.ShortHash))
 	sb.WriteString("\n\n")
 	currentY += 2 // header line + blank line from \n\n
 
-	// Metadata
-	sb.WriteString(styles.Subtitle.Render("Author: "))
+	// Author with icon-like prefix
 	authorStr := c.Author
-	if len(authorStr) > maxWidth-10 {
-		authorStr = authorStr[:maxWidth-13] + "..."
+	if len(authorStr) > maxWidth-12 {
+		authorStr = authorStr[:maxWidth-15] + "..."
 	}
+	sb.WriteString(labelStyle.Render("󰀄 ")) // Author icon
 	sb.WriteString(styles.Body.Render(authorStr))
 	sb.WriteString("\n")
 	currentY++
 
-	sb.WriteString(styles.Subtitle.Render("Date:   "))
+	// Date with icon-like prefix
+	sb.WriteString(labelStyle.Render("󰃰 ")) // Calendar icon
 	sb.WriteString(styles.Muted.Render(RelativeTime(c.Date)))
 	sb.WriteString("\n\n")
 	currentY += 2 // date + blank line
 
-	// Subject
+	// Subject in bold
 	subject := c.Subject
 	if len(subject) > maxWidth-2 {
 		subject = subject[:maxWidth-5] + "..."
 	}
-	sb.WriteString(styles.Body.Render(subject))
+	subjectStyle := lipgloss.NewStyle().
+		Foreground(styles.TextPrimary).
+		Bold(true)
+	sb.WriteString(subjectStyle.Render(subject))
 	sb.WriteString("\n")
 	currentY++
 
@@ -561,10 +699,11 @@ func (p *Plugin) renderCommitPreview(visibleHeight int) string {
 		}
 	}
 
-	// Separator
+	// Separator with subtle styling
 	sb.WriteString("\n")
 	currentY++
-	sb.WriteString(styles.Muted.Render(strings.Repeat("─", maxWidth)))
+	separator := lipgloss.NewStyle().Foreground(styles.BorderNormal)
+	sb.WriteString(separator.Render(strings.Repeat("─", maxWidth)))
 	sb.WriteString("\n")
 	currentY++
 

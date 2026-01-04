@@ -37,6 +37,12 @@ func DefaultBindings() []Binding {
 		{Key: "o", Command: "open-file", Context: "git-status"},
 		{Key: "O", Command: "open-in-file-browser", Context: "git-status"},
 		{Key: "enter", Command: "show-diff", Context: "git-status"},
+		{Key: "D", Command: "discard-changes", Context: "git-status"},
+		{Key: "z", Command: "stash", Context: "git-status"},
+		{Key: "Z", Command: "stash-pop", Context: "git-status"},
+		{Key: "b", Command: "branch-picker", Context: "git-status"},
+		{Key: "f", Command: "fetch", Context: "git-status"},
+		{Key: "p", Command: "pull", Context: "git-status"},
 
 		// Git Status commits context (recent commits in sidebar)
 		{Key: "enter", Command: "view-commit", Context: "git-status-commits"},
@@ -69,6 +75,10 @@ func DefaultBindings() []Binding {
 		{Key: "j", Command: "scroll", Context: "git-diff"},
 		{Key: "k", Command: "scroll", Context: "git-diff"},
 		{Key: "O", Command: "open-in-file-browser", Context: "git-diff"},
+
+		// Git Status Diff Pane context (inline diff in three-pane view)
+		{Key: "v", Command: "toggle-diff-view", Context: "git-status-diff"},
+		{Key: "tab", Command: "toggle-sidebar", Context: "git-status-diff"},
 
 		// TD Monitor bindings are registered dynamically by the TD plugin
 		// via ctx.Keymap.RegisterPluginBinding() in Init()
