@@ -267,6 +267,19 @@ Since mouse events require terminal interaction, test by:
 **Cause:** Region not registered or X-coordinate fallback not implemented.
 **Fix:** If `action.Region` is nil, fall back to checking `action.X` to determine which pane to scroll.
 
+### Scroll not working when over items (but works on empty space)
+**Cause:** Scroll handler only checks pane regions, but item regions have higher priority. When scrolling over an item, `HitMap.Test()` returns the item region (e.g., `regionFileItem`) instead of the pane region (e.g., `regionSidebar`), and the scroll handler ignores it.
+**Fix:** Include item regions in scroll routing:
+```go
+case mouse.ActionScrollUp, mouse.ActionScrollDown:
+    switch action.Region.ID {
+    case regionSidebar, regionFileItem, regionCommitItem:  // Include items!
+        return p.scrollSidebar(action.Delta)
+    case regionMainPane, regionDetailItem:
+        return p.scrollMainPane(action.Delta)
+    }
+```
+
 ### Drag not working
 **Cause:** `StartDrag()` not called on initial click, or checking wrong region ID.
 **Fix:** Call `StartDrag(x, y, regionID, initialValue)` in the click handler, then check `DragRegion()` in the drag handler.

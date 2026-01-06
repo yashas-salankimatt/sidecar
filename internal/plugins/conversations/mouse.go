@@ -146,14 +146,20 @@ func (p *Plugin) handleMouseScroll(action mouse.MouseAction) (*Plugin, tea.Cmd) 
 		if action.X < p.sidebarWidth+2 {
 			return p.scrollSidebar(action.Delta)
 		}
+		if p.detailMode {
+			return p.scrollDetailPane(action.Delta)
+		}
 		return p.scrollMainPane(action.Delta)
 	}
 
 	switch action.Region.ID {
-	case regionSidebar:
+	case regionSidebar, regionSessionItem:
 		return p.scrollSidebar(action.Delta)
 
-	case regionMainPane:
+	case regionMainPane, regionTurnItem:
+		if p.detailMode {
+			return p.scrollDetailPane(action.Delta)
+		}
 		return p.scrollMainPane(action.Delta)
 	}
 
@@ -206,6 +212,16 @@ func (p *Plugin) scrollMainPane(delta int) (*Plugin, tea.Cmd) {
 		p.ensureTurnCursorVisible()
 	}
 
+	return p, nil
+}
+
+// scrollDetailPane scrolls the detail view content.
+func (p *Plugin) scrollDetailPane(delta int) (*Plugin, tea.Cmd) {
+	p.detailScroll += delta
+	if p.detailScroll < 0 {
+		p.detailScroll = 0
+	}
+	// Max scroll is clamped in renderer (view.go:1587-1591)
 	return p, nil
 }
 
