@@ -159,14 +159,134 @@ import (
 - `resumeCommand()` is adapter-specific; add a mapping in `internal/plugins/conversations/view.go` if your tool supports resuming sessions.
 - `modelShortName()` should be extended if your models are non-Claude.
 
+## Conversation Flow View (Primary)
+
+The conversations plugin has two view modes:
+
+1. **Conversation Flow** (default) - Content-focused chat thread like Claude Code web UI
+2. **Turn View** - Metadata-focused aggregated turns (accessible via `v` shortcut)
+
+Conversation flow is the primary view. To support it well, adapters should populate `ContentBlocks` on messages.
+
+### ContentBlocks Structure
+
+```go
+type ContentBlock struct {
+    Type       string // "text", "tool_use", "tool_result", "thinking"
+    Text       string // For text/thinking blocks
+    ToolUseID  string // For tool_use and tool_result linking
+    ToolName   string // For tool_use
+    ToolInput  string // For tool_use (JSON string)
+    ToolOutput string // For tool_result
+    IsError    bool   // For tool_result errors
+    TokenCount int    // For thinking blocks
+}
+```
+
+### Populating ContentBlocks
+
+When implementing `Messages()`, parse your source format into ContentBlocks:
+
+```go
+func buildContentBlocks(rawBlocks []YourContentBlock) []adapter.ContentBlock {
+    var blocks []adapter.ContentBlock
+    for _, b := range rawBlocks {
+        switch b.Type {
+        case "text":
+            blocks = append(blocks, adapter.ContentBlock{
+                Type: "text",
+                Text: b.Text,
+            })
+        case "tool_use":
+            inputJSON, _ := json.Marshal(b.Input)
+            blocks = append(blocks, adapter.ContentBlock{
+                Type:      "tool_use",
+                ToolUseID: b.ID,
+                ToolName:  b.Name,
+                ToolInput: string(inputJSON),
+            })
+        case "tool_result":
+            blocks = append(blocks, adapter.ContentBlock{
+                Type:       "tool_result",
+                ToolUseID:  b.ToolUseID,
+                ToolOutput: b.Content,
+                IsError:    b.IsError,
+            })
+        case "thinking":
+            blocks = append(blocks, adapter.ContentBlock{
+                Type:       "thinking",
+                Text:       b.Thinking,
+                TokenCount: b.TokenCount,
+            })
+        }
+    }
+    return blocks
+}
+```
+
+### Tool Result Linking
+
+The conversation view uses a two-pass approach to link tool calls with their results:
+
+1. **First pass**: Collect all `tool_result` blocks by `ToolUseID`
+2. **Second pass**: When rendering `tool_use` blocks, look up and inline the result
+
+This means adapters should:
+- Always populate `ToolUseID` on both `tool_use` and `tool_result` blocks
+- Use consistent IDs that match between the tool call and its result
+- Include `tool_result` blocks even though they're not rendered separately
+
+### Example: Tool Use Flow
+
+```
+Assistant message with ContentBlocks:
+  [0] type=text, text="I'll read the file..."
+  [1] type=tool_use, id="tu_123", name="Read", input={"path": "foo.go"}
+
+User message with ContentBlocks:
+  [0] type=tool_result, tool_use_id="tu_123", output="package main..."
+```
+
+The conversation view will render this as:
+```
+[14:30] assistant
+    I'll read the file...
+    ▶ Read foo.go
+      package main...
+```
+
+### Fallback Rendering
+
+If `ContentBlocks` is empty, the view falls back to:
+1. `Message.Content` string (rendered as markdown)
+2. `Message.ToolUses` array (legacy format)
+3. `Message.ThinkingBlocks` array (legacy format)
+
+Populating `ContentBlocks` provides the richest display but isn't required.
+
+### View Mode Behavior
+
+| Feature | Conversation Flow | Turn View |
+|---------|------------------|-----------|
+| Shows actual message content | ✓ | Preview only |
+| Inline tool results | ✓ | Count only |
+| Expandable thinking | ✓ | Token count |
+| Message-level cursor | ✓ | Turn-level |
+| Keyboard shortcut | Default | `v` to toggle |
+
+Adapters don't need to do anything special for turn view—it's computed from messages automatically.
+
 ## Testing Checklist
 
 - Detect() matches both absolute and relative project roots
 - Sessions() includes AdapterIcon from Icon()
 - Sessions() sorts by UpdatedAt
 - Messages() attaches tool uses and token usage correctly
+- Messages() populates ContentBlocks with proper types and linking
+- ContentBlocks tool_use and tool_result share matching ToolUseID
 - Usage() matches message totals
 - Watch() emits create/write events (if supported)
+- Conversation flow view renders messages with inline tool results
 
 ## Performance Best Practices
 
