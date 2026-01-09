@@ -1717,6 +1717,12 @@ func (p *Plugin) renderToolUseBlock(block adapter.ContentBlock, maxWidth int) []
 	if block.ToolOutput != "" && (expanded || block.IsError) {
 		output := block.ToolOutput
 
+		// Truncate before prettifying to prevent memory issues with large outputs
+		const maxChars = 10000
+		if len(output) > maxChars {
+			output = output[:maxChars]
+		}
+
 		// Try to prettify JSON output
 		output = prettifyJSON(output)
 

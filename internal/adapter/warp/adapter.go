@@ -1,6 +1,7 @@
 package warp
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"os"
@@ -27,6 +28,7 @@ const (
 type Adapter struct {
 	dbPath       string
 	sessionIndex map[string]struct{} // tracks known conversation IDs
+	indexMu      sync.RWMutex        // protects sessionIndex access
 	db           *sql.DB             // persistent connection
 	dbMu         sync.Mutex          // protects db access
 }
@@ -198,7 +200,9 @@ func (a *Adapter) Sessions(projectRoot string) ([]adapter.Session, error) {
 			MessageCount: exchangeCount,
 		})
 
+		a.indexMu.Lock()
 		a.sessionIndex[convID] = struct{}{}
+		a.indexMu.Unlock()
 	}
 
 	if err := rows.Err(); err != nil {
@@ -419,8 +423,11 @@ func (a *Adapter) getDB() (*sql.DB, error) {
 	defer a.dbMu.Unlock()
 
 	if a.db != nil {
-		// Verify connection is still alive
-		if err := a.db.Ping(); err == nil {
+		// Verify connection is still alive with timeout to prevent deadlock
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := a.db.PingContext(ctx)
+		cancel()
+		if err == nil {
 			return a.db, nil
 		}
 		// Connection dead, close and recreate
