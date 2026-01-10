@@ -119,6 +119,10 @@ type Plugin struct {
 	// Watcher channel
 	watchChan <-chan adapter.Event
 
+	// Event coalescing for watch events
+	coalescer    *EventCoalescer
+	coalesceChan chan CoalescedRefreshMsg
+
 	// Search state
 	searchMode    bool
 	searchQuery   string
@@ -166,14 +170,19 @@ func New() *Plugin {
 	if err != nil {
 		log.Printf("warn: glamour init failed: %v", err)
 	}
-	return &Plugin{
+
+	coalesceChan := make(chan CoalescedRefreshMsg, 8)
+	p := &Plugin{
 		pageSize:            defaultPageSize,
 		expandedThinking:    make(map[string]bool),
 		expandedMessages:    make(map[string]bool),
 		expandedToolResults: make(map[string]bool),
 		mouseHandler:        mouse.NewHandler(),
 		contentRenderer:     renderer,
+		coalesceChan:        coalesceChan,
 	}
+	p.coalescer = NewEventCoalescer(0, coalesceChan)
+	return p
 }
 
 // ID returns the plugin identifier.
@@ -226,11 +235,16 @@ func (p *Plugin) Start() tea.Cmd {
 	return tea.Batch(
 		p.loadSessions(),
 		p.startWatcher(),
+		p.listenForCoalescedRefresh(),
 	)
 }
 
 // Stop cleans up plugin resources.
 func (p *Plugin) Stop() {
+	// Stop event coalescer
+	if p.coalescer != nil {
+		p.coalescer.Stop()
+	}
 	// Watcher cleanup handled by adapter
 }
 
@@ -337,15 +351,35 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		return p, p.listenForWatchEvents()
 
 	case WatchEventMsg:
-		// Session data changed, refresh sessions and continue listening
+		// Queue event for coalescing instead of immediate reload
+		p.coalescer.Add(msg.SessionID)
+
 		cmds := []tea.Cmd{
-			p.loadSessions(),
 			p.listenForWatchEvents(),
 		}
-		// Only reload messages if the modified session is currently selected
+
+		// Still reload messages immediately if selected session changed
+		// (coalescer handles session list refresh)
 		if msg.SessionID != "" && msg.SessionID == p.selectedSession {
 			cmds = append(cmds, p.loadMessages(p.selectedSession))
 		}
+
+		return p, tea.Batch(cmds...)
+
+	case CoalescedRefreshMsg:
+		// Coalesced watch events - batch refresh
+		cmds := []tea.Cmd{
+			p.listenForCoalescedRefresh(), // Continue listening for more batches
+		}
+
+		if msg.RefreshAll || len(msg.SessionIDs) == 0 {
+			// Full refresh needed
+			cmds = append(cmds, p.loadSessions())
+		} else {
+			// Phase 1: still do full refresh (Phase 2 will add targeted refresh)
+			cmds = append(cmds, p.loadSessions())
+		}
+
 		return p, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
@@ -1326,6 +1360,13 @@ func (p *Plugin) listenForWatchEvents() tea.Cmd {
 			return nil
 		}
 		return WatchEventMsg{SessionID: evt.SessionID}
+	}
+}
+
+// listenForCoalescedRefresh waits for coalesced refresh messages.
+func (p *Plugin) listenForCoalescedRefresh() tea.Cmd {
+	return func() tea.Msg {
+		return <-p.coalesceChan
 	}
 }
 
