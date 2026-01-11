@@ -19,9 +19,10 @@ const (
 
 // Adapter implements the adapter.Adapter interface for OpenCode sessions.
 type Adapter struct {
-	storageDir   string
-	projectIndex map[string]*Project // worktree path -> Project
-	sessionIndex map[string]string   // sessionID -> project ID
+	storageDir     string
+	projectIndex   map[string]*Project // worktree path -> Project
+	sessionIndex   map[string]string   // sessionID -> project ID
+	projectsLoaded bool                // true after loadProjects populates projectIndex
 }
 
 // New creates a new OpenCode adapter.
@@ -275,52 +276,33 @@ func (a *Adapter) findProjectID(projectRoot string) (string, error) {
 	}
 	absRoot = filepath.Clean(absRoot)
 
-	// Check cache first
+	// Load and cache all projects once
+	if !a.projectsLoaded {
+		if err := a.loadProjects(); err != nil {
+			return "", err
+		}
+	}
+
+	// Lookup in cache
 	if proj, ok := a.projectIndex[absRoot]; ok {
 		return proj.ID, nil
-	}
-
-	// Load all projects
-	projects, err := a.loadProjects()
-	if err != nil {
-		return "", err
-	}
-
-	// Find matching project
-	for _, proj := range projects {
-		// Skip global project
-		if proj.Worktree == "/" {
-			continue
-		}
-
-		// Normalize worktree path
-		worktree := proj.Worktree
-		if resolved, err := filepath.EvalSymlinks(worktree); err == nil {
-			worktree = resolved
-		}
-		worktree = filepath.Clean(worktree)
-
-		if worktree == absRoot {
-			a.projectIndex[absRoot] = proj
-			return proj.ID, nil
-		}
 	}
 
 	return "", nil
 }
 
-// loadProjects loads all projects from storage/project/*.json.
-func (a *Adapter) loadProjects() ([]*Project, error) {
+// loadProjects loads all projects from storage/project/*.json and populates projectIndex.
+func (a *Adapter) loadProjects() error {
 	projectDir := filepath.Join(a.storageDir, "project")
 	entries, err := os.ReadDir(projectDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			a.projectsLoaded = true
+			return nil
 		}
-		return nil, err
+		return err
 	}
 
-	var projects []*Project
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -337,10 +319,24 @@ func (a *Adapter) loadProjects() ([]*Project, error) {
 			continue
 		}
 
-		projects = append(projects, &proj)
+		// Skip global project
+		if proj.Worktree == "/" {
+			continue
+		}
+
+		// Normalize and cache worktree path
+		worktree := proj.Worktree
+		if resolved, err := filepath.EvalSymlinks(worktree); err == nil {
+			worktree = resolved
+		}
+		worktree = filepath.Clean(worktree)
+
+		projCopy := proj // Copy to avoid pointer aliasing
+		a.projectIndex[worktree] = &projCopy
 	}
 
-	return projects, nil
+	a.projectsLoaded = true
+	return nil
 }
 
 // parseSessionFile parses a session JSON file and returns metadata.

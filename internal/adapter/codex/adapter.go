@@ -36,17 +36,19 @@ const (
 
 // Adapter implements the adapter.Adapter interface for Codex CLI sessions.
 type Adapter struct {
-	sessionsDir  string
-	sessionIndex map[string]string // sessionID -> file path cache
-	mu           sync.RWMutex      // guards sessionIndex
+	sessionsDir     string
+	sessionIndex    map[string]string      // sessionID -> file path cache
+	totalUsageCache map[string]*TokenUsage // sessionID -> total usage (populated by Messages)
+	mu              sync.RWMutex           // guards sessionIndex and totalUsageCache
 }
 
 // New creates a new Codex adapter.
 func New() *Adapter {
 	home, _ := os.UserHomeDir()
 	return &Adapter{
-		sessionsDir:  filepath.Join(home, ".codex", "sessions"),
-		sessionIndex: make(map[string]string),
+		sessionsDir:     filepath.Join(home, ".codex", "sessions"),
+		sessionIndex:    make(map[string]string),
+		totalUsageCache: make(map[string]*TokenUsage),
 	}
 }
 
@@ -159,6 +161,7 @@ func (a *Adapter) Messages(sessionID string) ([]adapter.Message, error) {
 	toolIndex := make(map[string]int)
 	var pendingThinking []adapter.ThinkingBlock
 	var pendingUsage *adapter.TokenUsage
+	var totalUsage *TokenUsage // Captured for Usage() to avoid re-scan
 	var currentModel string
 	var lastTimestamp time.Time
 
@@ -305,10 +308,15 @@ func (a *Adapter) Messages(sessionID string) ([]adapter.Message, error) {
 					})
 				}
 			case "token_count":
-				if event.Info == nil || event.Info.LastTokenUsage == nil {
+				if event.Info == nil {
 					continue
 				}
-				pendingUsage = convertUsage(event.Info.LastTokenUsage)
+				if event.Info.LastTokenUsage != nil {
+					pendingUsage = convertUsage(event.Info.LastTokenUsage)
+				}
+				if event.Info.TotalTokenUsage != nil {
+					totalUsage = event.Info.TotalTokenUsage
+				}
 			}
 		}
 	}
@@ -318,6 +326,13 @@ func (a *Adapter) Messages(sessionID string) ([]adapter.Message, error) {
 	}
 
 	flushPending(lastTimestamp)
+
+	// Cache total usage for Usage() to avoid re-scanning
+	if totalUsage != nil {
+		a.mu.Lock()
+		a.totalUsageCache[sessionID] = totalUsage
+		a.mu.Unlock()
+	}
 
 	return messages, nil
 }
@@ -338,14 +353,15 @@ func (a *Adapter) Usage(sessionID string) (*adapter.UsageStats, error) {
 		stats.MessageCount++
 	}
 
+	// If per-message stats are zero, use cached total from Messages() scan
 	if stats.TotalInputTokens == 0 && stats.TotalOutputTokens == 0 && stats.TotalCacheRead == 0 {
-		path := a.sessionFilePath(sessionID)
-		if path != "" {
-			if usage := a.totalUsageFromFile(path); usage != nil {
-				stats.TotalInputTokens = usage.InputTokens
-				stats.TotalOutputTokens = usage.OutputTokens + usage.ReasoningOutputTokens
-				stats.TotalCacheRead = usage.CachedInputTokens
-			}
+		a.mu.RLock()
+		usage := a.totalUsageCache[sessionID]
+		a.mu.RUnlock()
+		if usage != nil {
+			stats.TotalInputTokens = usage.InputTokens
+			stats.TotalOutputTokens = usage.OutputTokens + usage.ReasoningOutputTokens
+			stats.TotalCacheRead = usage.CachedInputTokens
 		}
 	}
 
@@ -540,44 +556,6 @@ func (a *Adapter) sessionFilePath(sessionID string) string {
 	}
 
 	return ""
-}
-
-func (a *Adapter) totalUsageFromFile(path string) *TokenUsage {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	buf := getScannerBuffer()
-	defer putScannerBuffer(buf)
-	scanner.Buffer(buf, 10*1024*1024)
-
-	var total *TokenUsage
-	for scanner.Scan() {
-		var record RawRecord
-		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
-			continue
-		}
-		if record.Type != "event_msg" {
-			continue
-		}
-		var event EventMsgPayload
-		if err := json.Unmarshal(record.Payload, &event); err != nil {
-			continue
-		}
-		if event.Type != "token_count" || event.Info == nil || event.Info.TotalTokenUsage == nil {
-			continue
-		}
-		total = event.Info.TotalTokenUsage
-	}
-
-	if err := scanner.Err(); err != nil {
-		return total
-	}
-
-	return total
 }
 
 func contentFromBlocks(blocks []ContentBlock) string {

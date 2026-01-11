@@ -319,16 +319,40 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			// Ignore out-of-order loads when cursor moves quickly.
 			return p, nil
 		}
-		p.loadedSession = msg.SessionID
-		p.messages = msg.Messages
-		p.turns = GroupMessagesIntoTurns(msg.Messages)
-		p.turnCursor = 0
-		p.turnScrollOff = 0
-		// Snap messageCursor to first visible message (skip tool-result-only)
-		visibleIndices := p.visibleMessageIndices()
-		if len(visibleIndices) > 0 {
-			p.messageCursor = visibleIndices[0]
+
+		// Check if this is an incremental update (same session, more messages)
+		isIncremental := p.loadedSession == msg.SessionID &&
+			len(p.messages) > 0 &&
+			len(msg.Messages) >= len(p.messages) &&
+			p.messagesMatch(p.messages, msg.Messages[:len(p.messages)])
+
+		if isIncremental && len(msg.Messages) == len(p.messages) {
+			// No new messages, skip re-processing entirely
+			return p, nil
 		}
+
+		if isIncremental {
+			// Incremental update: only process new messages
+			newMessages := msg.Messages[len(p.messages):]
+			p.messages = msg.Messages
+			// Append new turns without re-grouping everything
+			newTurns := GroupMessagesIntoTurns(newMessages)
+			p.turns = append(p.turns, newTurns...)
+			// Don't reset cursors - user may be scrolled
+		} else {
+			// Full reload: different session or messages don't match
+			p.loadedSession = msg.SessionID
+			p.messages = msg.Messages
+			p.turns = GroupMessagesIntoTurns(msg.Messages)
+			p.turnCursor = 0
+			p.turnScrollOff = 0
+			// Snap messageCursor to first visible message (skip tool-result-only)
+			visibleIndices := p.visibleMessageIndices()
+			if len(visibleIndices) > 0 {
+				p.messageCursor = visibleIndices[0]
+			}
+		}
+
 		p.hasMore = len(msg.Messages) >= p.pageSize
 		// Compute session summary
 		var duration time.Duration
@@ -1798,4 +1822,19 @@ func TickCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 		return WatchEventMsg{}
 	})
+}
+
+// messagesMatch checks if old messages match the prefix of new messages.
+// Used to detect incremental updates (new messages appended).
+func (p *Plugin) messagesMatch(old, newPrefix []adapter.Message) bool {
+	if len(old) != len(newPrefix) {
+		return false
+	}
+	for i := range old {
+		// Compare by ID and timestamp - content may have minor differences
+		if old[i].ID != newPrefix[i].ID {
+			return false
+		}
+	}
+	return true
 }
