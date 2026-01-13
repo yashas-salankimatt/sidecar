@@ -2,6 +2,26 @@
 
 All notable changes to sidecar are documented here.
 
+## [v0.14.0] - 2026-01-13
+
+### Features
+- **Theming System**: Thread-safe theming infrastructure with customizable colors
+- **Unified Sidebars**: Consistent collapsible sidebar behavior across all plugins
+
+### Improvements
+- Cache improvements in conversation adapters
+- Performance optimizations for conversations loading
+- Render cache LRU comment fix
+
+### Bug Fixes
+- Fixed race condition and CPU optimization for session adapters
+- Fixed losing mouse interactivity after editing a file
+- Fixed quit bug in td
+- Fixed IsValidHexColor comment to match regex behavior
+
+### Dependencies
+- Updated embedded td to v0.10.0 (from v0.9.0)
+
 ## [v0.13.2] - 2026-01-10
 
 ### Improvements
