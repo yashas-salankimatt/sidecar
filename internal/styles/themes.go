@@ -203,7 +203,7 @@ var themeRegistry = map[string]Theme{
 // currentTheme tracks the active theme name
 var currentTheme = "default"
 
-// IsValidHexColor checks if a string is a valid hex color code (#RRGGBB)
+// IsValidHexColor checks if a string is a valid hex color code (#RRGGBB or #RRGGBBAA)
 func IsValidHexColor(hex string) bool {
 	return hexColorRegex.MatchString(hex)
 }
