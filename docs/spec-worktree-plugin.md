@@ -163,7 +163,13 @@ type Plugin struct {
     viewMode       ViewMode
     activePane     FocusPane
     selectedIdx    int
+    scrollOffset   int              // Sidebar list scroll offset
+    visibleCount   int              // Number of visible list items (computed in View)
     previewOffset  int
+    sidebarWidth   int              // Persisted sidebar width (drag-to-resize)
+
+    // Mouse support
+    mouseHandler *mouse.Handler     // Hit regions, drag tracking (see Section 4.11)
 
     // Async state
     refreshing     bool
@@ -771,6 +777,472 @@ func (p *Plugin) renderDiffPane(width, height int) string {
 ```
 
 **Note:** The diff renderer should be extracted to a shared package (e.g., `internal/ui/diff`) if not already available. See td-331dbf19 for paging implementation reference.
+
+### 4.11 Mouse Support
+
+The worktree plugin supports mouse interactions for list selection, scrolling, pane focus, and drag-to-resize. Follow the patterns in `internal/mouse` and `mouse-support-guide.md`.
+
+#### 4.11.1 Handler Setup
+
+```go
+import "github.com/marcus/sidecar/internal/mouse"
+
+func New(ctx *plugin.Context) *Plugin {
+    return &Plugin{
+        ctx:          ctx,
+        mouseHandler: mouse.NewHandler(),
+        // ...
+    }
+}
+```
+
+#### 4.11.2 Hit Region Constants
+
+```go
+const (
+    // Pane regions (registered first = lowest priority)
+    regionSidebar     = "sidebar"
+    regionPreviewPane = "preview-pane"
+    regionPaneDivider = "pane-divider"
+
+    // Item regions (registered last = highest priority)
+    regionWorktreeItem = "worktree-item"
+
+    dividerWidth    = 1  // Visual divider width
+    dividerHitWidth = 3  // Wider hit target for easier clicking
+)
+```
+
+#### 4.11.3 Handling MouseMsg in Update
+
+```go
+func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.MouseMsg:
+        return p.handleMouse(msg)
+    // ... other cases
+    }
+    return p, nil
+}
+
+func (p *Plugin) handleMouse(msg tea.MouseMsg) (*Plugin, tea.Cmd) {
+    action := p.mouseHandler.HandleMouse(msg)
+
+    switch action.Type {
+    case mouse.ActionClick:
+        return p.handleMouseClick(action)
+    case mouse.ActionDoubleClick:
+        return p.handleMouseDoubleClick(action)
+    case mouse.ActionDrag:
+        return p.handleMouseDrag(action)
+    case mouse.ActionDragEnd:
+        return p.handleMouseDragEnd()
+    case mouse.ActionScrollUp, mouse.ActionScrollDown:
+        return p.handleMouseScroll(action)
+    }
+    return p, nil
+}
+```
+
+#### 4.11.4 Region Registration (Critical: Order Matters)
+
+Regions are tested in **reverse order** - last added = checked first. Register pane regions first (fallback), then item regions last (priority):
+
+```go
+func (p *Plugin) View(width, height int) string {
+    p.width, p.height = width, height
+
+    // CRITICAL: Clear hit regions at start of each render
+    p.mouseHandler.HitMap.Clear()
+
+    // Calculate pane widths
+    sidebarW := p.sidebarWidth
+    if sidebarW == 0 {
+        sidebarW = width * 30 / 100  // Default 30%
+    }
+    previewW := width - sidebarW - dividerWidth
+
+    // ... render panes ...
+
+    // Register regions in priority order (last = highest priority)
+
+    // 1. Pane regions (lowest priority - fallback for scroll)
+    p.mouseHandler.HitMap.AddRect(regionSidebar, 0, 0, sidebarW, height, nil)
+    p.mouseHandler.HitMap.AddRect(regionPreviewPane, sidebarW+dividerWidth, 0, previewW, height, nil)
+
+    // 2. Divider region (medium priority - for drag)
+    p.mouseHandler.HitMap.AddRect(regionPaneDivider, sidebarW, 0, dividerHitWidth, height, nil)
+
+    // 3. Item regions (highest priority - registered LAST)
+    // These are registered during sidebar rendering (see 4.11.5)
+
+    return content
+}
+```
+
+#### 4.11.5 Registering Item Regions During List Render
+
+```go
+func (p *Plugin) renderWorktreeList(width, visibleHeight int) string {
+    var sb strings.Builder
+    currentY := 0  // Track Y position for hit regions
+
+    // Header line
+    sb.WriteString(headerStyle.Render("Worktrees"))
+    currentY++
+
+    // Render visible worktrees
+    startIdx := p.scrollOffset
+    endIdx := min(startIdx+visibleHeight-1, len(p.worktrees))
+
+    for i := startIdx; i < endIdx; i++ {
+        wt := p.worktrees[i]
+        line := p.renderWorktreeLine(wt, width, i == p.selectedIdx)
+        sb.WriteString(line)
+        sb.WriteString("\n")
+
+        // Register hit region with ABSOLUTE index (not visible index)
+        p.mouseHandler.HitMap.AddRect(
+            regionWorktreeItem,
+            0,           // x
+            currentY,    // y (tracks rendered position)
+            width,       // width
+            1,           // height (single line)
+            i,           // data: absolute worktree index
+        )
+        currentY++
+    }
+
+    return sb.String()
+}
+```
+
+#### 4.11.6 Common Mouse Patterns
+
+**Click to select worktree:**
+
+```go
+func (p *Plugin) handleMouseClick(action mouse.MouseAction) (*Plugin, tea.Cmd) {
+    if action.Region == nil {
+        return p, nil
+    }
+
+    switch action.Region.ID {
+    case regionWorktreeItem:
+        if idx, ok := action.Region.Data.(int); ok {
+            p.selectedIdx = idx
+            p.ensureCursorVisible()
+        }
+
+    case regionSidebar:
+        p.activePane = PaneSidebar
+
+    case regionPreviewPane:
+        p.activePane = PanePreview
+
+    case regionPaneDivider:
+        // Start drag - store current width as initial value
+        p.mouseHandler.StartDrag(action.X, action.Y, regionPaneDivider, p.sidebarWidth)
+    }
+
+    return p, nil
+}
+```
+
+**Double-click to attach:**
+
+```go
+func (p *Plugin) handleMouseDoubleClick(action mouse.MouseAction) (*Plugin, tea.Cmd) {
+    if action.Region == nil || action.Region.ID != regionWorktreeItem {
+        return p, nil
+    }
+
+    if idx, ok := action.Region.Data.(int); ok {
+        p.selectedIdx = idx
+        return p, p.attachToSession()
+    }
+    return p, nil
+}
+```
+
+**Scroll wheel:**
+
+```go
+func (p *Plugin) handleMouseScroll(action mouse.MouseAction) (*Plugin, tea.Cmd) {
+    // Include item regions in scroll routing (items have higher priority than panes)
+    switch action.Region.ID {
+    case regionSidebar, regionWorktreeItem:
+        p.scrollOffset += action.Delta
+        p.clampScroll()
+
+    case regionPreviewPane:
+        p.previewOffset += action.Delta
+        p.clampPreviewScroll()
+    }
+    return p, nil
+}
+```
+
+**See Section 4.13 for drag-to-resize implementation.**
+
+### 4.12 Sidebar List Implementation
+
+The worktree list follows the patterns in `sidebar-list-guide.md` to ensure stable scrolling and correct rendering.
+
+#### 4.12.1 Layout Accounting
+
+Compute pane height once and pass it down. Never double-count headers or borders:
+
+```go
+func (p *Plugin) View(width, height int) string {
+    p.width, p.height = width, height
+
+    // Calculate available content height (minus panel borders)
+    paneHeight := height - 2  // Panel top/bottom border
+
+    // Sidebar header takes 1 line
+    sidebarContentHeight := paneHeight - 1
+
+    // Use same height for scroll clamping and rendering
+    p.visibleCount = sidebarContentHeight
+    p.clampScroll()
+
+    return p.renderSplitPane(width, paneHeight)
+}
+```
+
+#### 4.12.2 Scroll and Cursor Stability
+
+```go
+// Clamp scroll offset after any data change
+func (p *Plugin) clampScroll() {
+    maxScroll := len(p.worktrees) - p.visibleCount
+    if maxScroll < 0 {
+        maxScroll = 0
+    }
+    if p.scrollOffset > maxScroll {
+        p.scrollOffset = maxScroll
+    }
+    if p.scrollOffset < 0 {
+        p.scrollOffset = 0
+    }
+}
+
+// Ensure selected item is visible
+func (p *Plugin) ensureCursorVisible() {
+    if p.selectedIdx < p.scrollOffset {
+        p.scrollOffset = p.selectedIdx
+    } else if p.selectedIdx >= p.scrollOffset+p.visibleCount {
+        p.scrollOffset = p.selectedIdx - p.visibleCount + 1
+    }
+}
+```
+
+**Critical rules:**
+
+- Never mutate scroll offsets inside `View()` - rendering must be pure
+- Always clamp after data changes (refresh, filter, add, remove)
+- Use absolute indices for hit regions, not visible indices
+- Preserve selection by worktree name (stable ID), not index
+
+#### 4.12.3 Async Refresh Safety
+
+When refreshing the worktree list, preserve user position:
+
+```go
+func (p *Plugin) handleRefreshDone(msg RefreshDoneMsg) (*Plugin, tea.Cmd) {
+    if msg.Err != nil {
+        p.refreshing = false
+        return p, nil
+    }
+
+    // Preserve selection by stable ID (worktree name)
+    selectedName := ""
+    if p.selectedIdx < len(p.worktrees) {
+        selectedName = p.worktrees[p.selectedIdx].Name
+    }
+
+    p.worktrees = msg.Worktrees
+
+    // Restore selection by name
+    for i, wt := range p.worktrees {
+        if wt.Name == selectedName {
+            p.selectedIdx = i
+            break
+        }
+    }
+
+    // Clamp in case list shrunk
+    if p.selectedIdx >= len(p.worktrees) {
+        p.selectedIdx = len(p.worktrees) - 1
+    }
+    if p.selectedIdx < 0 {
+        p.selectedIdx = 0
+    }
+
+    p.clampScroll()
+    p.ensureCursorVisible()
+    p.refreshing = false
+    return p, nil
+}
+```
+
+#### 4.12.4 Pitfalls Checklist
+
+- [ ] Double-counted header lines or borders
+- [ ] Scroll offsets adjusted inside render methods
+- [ ] Refresh replaced list without preserving selection
+- [ ] No clamp after list size changes
+- [ ] Hit regions using visible index instead of absolute index
+- [ ] Headers wrapped instead of truncated (steals height)
+
+### 4.13 Drag-to-Resize Pane
+
+Enable users to drag the pane divider to resize the sidebar. Follow the patterns in `drag-pane-implementation-guide.md`.
+
+#### 4.13.1 State Persistence
+
+Add sidebar width to plugin state:
+
+```go
+// In internal/state/state.go
+type State struct {
+    // ... existing fields
+    WorktreeSidebarWidth int `json:"worktreeSidebarWidth,omitempty"`
+}
+
+func GetWorktreeSidebarWidth() int {
+    mu.RLock()
+    defer mu.RUnlock()
+    if current == nil {
+        return 0
+    }
+    return current.WorktreeSidebarWidth
+}
+
+func SetWorktreeSidebarWidth(width int) error {
+    mu.Lock()
+    if current == nil {
+        current = &State{}
+    }
+    current.WorktreeSidebarWidth = width
+    mu.Unlock()
+    return Save()
+}
+```
+
+#### 4.13.2 Load Persisted Width in Init
+
+```go
+func (p *Plugin) Init(ctx *plugin.Context) error {
+    // Load persisted sidebar width
+    if savedWidth := state.GetWorktreeSidebarWidth(); savedWidth > 0 {
+        p.sidebarWidth = savedWidth
+    }
+    // ... rest of init
+    return nil
+}
+```
+
+#### 4.13.3 Handle Drag Events
+
+```go
+func (p *Plugin) handleMouseDrag(action mouse.MouseAction) (*Plugin, tea.Cmd) {
+    if p.mouseHandler.DragRegion() != regionPaneDivider {
+        return p, nil
+    }
+
+    // Calculate new width from drag delta
+    startValue := p.mouseHandler.DragStartValue()
+    newWidth := startValue + action.DragDX
+
+    // Clamp to bounds
+    available := p.width - 5 - dividerWidth
+    minWidth := 25
+    maxWidth := available - 40
+
+    if newWidth < minWidth {
+        newWidth = minWidth
+    } else if newWidth > maxWidth {
+        newWidth = maxWidth
+    }
+
+    p.sidebarWidth = newWidth
+    return p, nil
+}
+
+func (p *Plugin) handleMouseDragEnd() (*Plugin, tea.Cmd) {
+    // Persist width on drag end
+    _ = state.SetWorktreeSidebarWidth(p.sidebarWidth)
+    return p, nil
+}
+```
+
+#### 4.13.4 Critical Rules
+
+**Rule 1: Never reset width in View()**
+
+```go
+// WRONG - overwrites drag changes on every render!
+func (p *Plugin) View(width, height int) string {
+    p.sidebarWidth = width * 30 / 100  // BUG!
+    // ...
+}
+
+// CORRECT - only set default if not initialized
+func (p *Plugin) View(width, height int) string {
+    if p.sidebarWidth == 0 {
+        p.sidebarWidth = width * 30 / 100  // Default only once
+    }
+    // ... clamp to current bounds
+}
+```
+
+**Rule 2: Correct divider X coordinate**
+
+The divider X position = `sidebarWidth`, not `sidebarWidth + borderWidth`:
+
+```go
+// CORRECT: Divider starts at column sidebarWidth
+dividerX := sidebarWidth
+p.mouseHandler.HitMap.AddRect(regionPaneDivider, dividerX, 0, dividerHitWidth, height, nil)
+```
+
+**Rule 3: Region priority**
+
+The divider region MUST be registered AFTER pane regions so it takes priority:
+
+```go
+// CORRECT ORDER:
+p.mouseHandler.HitMap.AddRect(regionSidebar, ...)       // Lowest priority
+p.mouseHandler.HitMap.AddRect(regionPreviewPane, ...)   // Medium priority
+p.mouseHandler.HitMap.AddRect(regionPaneDivider, ...)   // HIGHEST (last)
+```
+
+**Rule 4: Use wider hit target**
+
+```go
+dividerHitWidth := 3  // Wider than visual 1-char divider for easier clicking
+```
+
+#### 4.13.5 Visual Divider
+
+```go
+func (p *Plugin) renderDivider(height int) string {
+    dividerStyle := lipgloss.NewStyle().
+        Foreground(styles.BorderNormal).
+        MarginTop(1)  // Align with pane content
+
+    var sb strings.Builder
+    for i := 0; i < height; i++ {
+        sb.WriteString("│")
+        if i < height-1 {
+            sb.WriteString("\n")
+        }
+    }
+    return dividerStyle.Render(sb.String())
+}
+```
 
 ---
 
