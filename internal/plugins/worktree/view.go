@@ -74,9 +74,14 @@ func (p *Plugin) View(width, height int) string {
 	p.width = width
 	p.height = height
 
+	// CRITICAL: Clear hit regions at start of each render
+	p.mouseHandler.Clear()
+
 	switch p.viewMode {
 	case ViewModeCreate:
 		return p.renderCreateModal(width, height)
+	case ViewModeKanban:
+		return p.renderKanbanView(width, height)
 	default:
 		return p.renderListView(width, height)
 	}
@@ -84,36 +89,61 @@ func (p *Plugin) View(width, height int) string {
 
 // renderListView renders the main split-pane list view.
 func (p *Plugin) renderListView(width, height int) string {
-	// Calculate pane widths (40% sidebar, 60% preview)
+	// Calculate pane widths (sidebarWidth is percentage)
 	sidebarW := (width * p.sidebarWidth) / 100
 	if sidebarW < 25 {
 		sidebarW = 25
 	}
-	previewW := width - sidebarW - 1 // -1 for border
+	if sidebarW > width-40 {
+		sidebarW = width - 40
+	}
+	previewW := width - sidebarW - dividerWidth
 
-	// Render each pane
+	// Register hit regions (order matters: last = highest priority)
+	// 1. Pane regions (lowest priority - fallback for scroll)
+	p.mouseHandler.HitMap.AddRect(regionSidebar, 0, 0, sidebarW, height, nil)
+	p.mouseHandler.HitMap.AddRect(regionPreviewPane, sidebarW+dividerWidth, 0, previewW, height, nil)
+
+	// 2. Divider region (high priority - for drag)
+	p.mouseHandler.HitMap.AddRect(regionPaneDivider, sidebarW, 0, dividerHitWidth, height, nil)
+
+	// Render each pane (item regions are registered during sidebar rendering)
 	sidebar := p.renderSidebar(sidebarW, height)
+	divider := p.renderDivider(height)
 	preview := p.renderPreview(previewW, height)
 
 	// Join horizontally
-	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, preview)
+	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, divider, preview)
 }
 
 // renderSidebar renders the worktree list sidebar.
 func (p *Plugin) renderSidebar(width, height int) string {
 	var lines []string
 
-	// Header
+	// Header with view mode toggle
 	header := "Worktrees"
 	if p.activePane == PaneSidebar {
 		header = selectedStyle.Render(header)
 	}
-	lines = append(lines, header)
+	// View mode toggle tabs
+	listTab := "[List]"
+	kanbanTab := "Kanban"
+	if p.viewMode == ViewModeKanban {
+		listTab = "List"
+		kanbanTab = "[Kanban]"
+	}
+	viewToggle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(listTab + "|" + kanbanTab)
+	headerLine := header + strings.Repeat(" ", max(1, width-2-len(header)-len(listTab)-len(kanbanTab)-1)) + viewToggle
+	lines = append(lines, headerLine)
 	lines = append(lines, strings.Repeat("─", width-2))
 
-	// Calculate visible items
+	// Track Y position for hit regions
+	currentY := 2 // After header + separator
+
+	// Calculate visible items (each item is 2 lines)
 	contentHeight := height - 2 // header + separator
-	p.visibleCount = contentHeight
+	itemHeight := 2             // Each worktree item takes 2 lines
+	p.visibleCount = contentHeight / itemHeight
 
 	// Render worktree items
 	if len(p.worktrees) == 0 {
@@ -123,7 +153,12 @@ func (p *Plugin) renderSidebar(width, height int) string {
 		for i := p.scrollOffset; i < len(p.worktrees) && i < p.scrollOffset+p.visibleCount; i++ {
 			wt := p.worktrees[i]
 			line := p.renderWorktreeItem(wt, i == p.selectedIdx, width-2)
+
+			// Register hit region with ABSOLUTE index
+			p.mouseHandler.HitMap.AddRect(regionWorktreeItem, 0, currentY, width, itemHeight, i)
+
 			lines = append(lines, line)
+			currentY += itemHeight
 		}
 	}
 
@@ -440,3 +475,112 @@ func formatRelativeTime(t time.Time) string {
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
+
+// renderDivider renders the vertical divider between panes.
+func (p *Plugin) renderDivider(height int) string {
+	dividerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
+
+	var sb strings.Builder
+	for i := 0; i < height; i++ {
+		sb.WriteString("│")
+		if i < height-1 {
+			sb.WriteString("\n")
+		}
+	}
+	return dividerStyle.Render(sb.String())
+}
+
+// renderKanbanView renders the kanban board view.
+func (p *Plugin) renderKanbanView(width, height int) string {
+	// Check minimum width - auto-collapse to list view if too narrow
+	minKanbanWidth := 80
+	if width < minKanbanWidth {
+		// Fall back to list view when too narrow
+		return p.renderListView(width, height)
+	}
+
+	var lines []string
+
+	// Header with view mode toggle
+	header := "Worktrees"
+	listTab := "List"
+	kanbanTab := "[Kanban]"
+	viewToggle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(listTab + "|" + kanbanTab)
+	headerLine := header + strings.Repeat(" ", max(1, width-len(header)-len(listTab)-len(kanbanTab)-1)) + viewToggle
+	lines = append(lines, headerLine)
+	lines = append(lines, strings.Repeat("─", width))
+
+	// Group worktrees by status
+	columns := map[WorktreeStatus][]*Worktree{
+		StatusActive:  {},
+		StatusWaiting: {},
+		StatusDone:    {},
+		StatusPaused:  {},
+		StatusError:   {},
+	}
+	for _, wt := range p.worktrees {
+		columns[wt.Status] = append(columns[wt.Status], wt)
+	}
+
+	// Column headers and order
+	columnOrder := []WorktreeStatus{StatusActive, StatusWaiting, StatusDone, StatusPaused}
+	columnTitles := map[WorktreeStatus]string{
+		StatusActive:  "● Active",
+		StatusWaiting: "💬 Waiting",
+		StatusDone:    "✓ Done",
+		StatusPaused:  "⏸ Paused",
+		StatusError:   "✗ Error",
+	}
+
+	// Calculate column widths
+	numCols := len(columnOrder)
+	colWidth := (width - numCols - 1) / numCols // -1 for separators
+	if colWidth < 15 {
+		colWidth = 15
+	}
+
+	// Render column headers
+	var colHeaders []string
+	for _, status := range columnOrder {
+		items := columns[status]
+		title := fmt.Sprintf("%s (%d)", columnTitles[status], len(items))
+		colHeaders = append(colHeaders, lipgloss.NewStyle().Bold(true).Width(colWidth).Render(title))
+	}
+	lines = append(lines, strings.Join(colHeaders, "│"))
+	lines = append(lines, strings.Repeat("─", width))
+
+	// Calculate content height
+	contentHeight := height - 4 // header + 2 separators + column headers
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+
+	// Render column content
+	for row := 0; row < contentHeight; row++ {
+		var rowCells []string
+		for _, status := range columnOrder {
+			items := columns[status]
+			cell := ""
+			if row < len(items) {
+				wt := items[row]
+				// Truncate name to fit column
+				name := wt.Name
+				if len(name) > colWidth-4 {
+					name = name[:colWidth-7] + "..."
+				}
+				cell = fmt.Sprintf(" %s %s", wt.Status.Icon(), name)
+			}
+			rowCells = append(rowCells, lipgloss.NewStyle().Width(colWidth).Render(cell))
+		}
+		lines = append(lines, strings.Join(rowCells, "│"))
+	}
+
+	// Pad to fill height
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+
+	return strings.Join(lines[:height], "\n")
+}
+

@@ -18,6 +18,18 @@ const (
 
 	// Output buffer capacity (lines)
 	outputBufferCap = 500
+
+	// Pane layout constants
+	dividerWidth    = 1 // Visual divider width
+	dividerHitWidth = 3 // Wider hit target for drag
+
+	// Hit region IDs
+	regionSidebar       = "sidebar"
+	regionPreviewPane   = "preview-pane"
+	regionPaneDivider   = "pane-divider"
+	regionWorktreeItem  = "worktree-item"
+	regionViewModeTab   = "view-mode-tab"
+	regionPreviewTab    = "preview-tab"
 )
 
 // Plugin implements the worktree manager plugin.
@@ -104,6 +116,7 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 		ctx.Keymap.RegisterPluginBinding("D", "delete-worktree", "worktree-list")
 		ctx.Keymap.RegisterPluginBinding("p", "push", "worktree-list")
 		ctx.Keymap.RegisterPluginBinding("d", "show-diff", "worktree-list")
+		ctx.Keymap.RegisterPluginBinding("v", "toggle-view", "worktree-list")
 		ctx.Keymap.RegisterPluginBinding("l", "focus-right", "worktree-list")
 		ctx.Keymap.RegisterPluginBinding("right", "focus-right", "worktree-list")
 		ctx.Keymap.RegisterPluginBinding("\\", "toggle-sidebar", "worktree-list")
@@ -239,7 +252,7 @@ func (p *Plugin) clearCreateModal() {
 // handleKeyPress processes key input based on current view mode.
 func (p *Plugin) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 	switch p.viewMode {
-	case ViewModeList:
+	case ViewModeList, ViewModeKanban:
 		return p.handleListKeys(msg)
 	case ViewModeCreate:
 		return p.handleCreateKeys(msg)
@@ -247,7 +260,7 @@ func (p *Plugin) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// handleListKeys handles keys in list view.
+// handleListKeys handles keys in list view (and kanban view).
 func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "j", "down":
@@ -297,6 +310,13 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 		p.cyclePreviewTab(-1)
 	case "r":
 		return func() tea.Msg { return RefreshMsg{} }
+	case "v":
+		// Toggle between list and kanban view
+		if p.viewMode == ViewModeList {
+			p.viewMode = ViewModeKanban
+		} else if p.viewMode == ViewModeKanban {
+			p.viewMode = ViewModeList
+		}
 	}
 	return nil
 }
@@ -376,7 +396,163 @@ func (p *Plugin) cyclePreviewTab(delta int) {
 
 // handleMouse processes mouse input.
 func (p *Plugin) handleMouse(msg tea.MouseMsg) tea.Cmd {
-	// TODO: implement mouse handling
+	action := p.mouseHandler.HandleMouse(msg)
+
+	switch action.Type {
+	case mouse.ActionClick:
+		return p.handleMouseClick(action)
+	case mouse.ActionDoubleClick:
+		return p.handleMouseDoubleClick(action)
+	case mouse.ActionScrollUp, mouse.ActionScrollDown:
+		return p.handleMouseScroll(action)
+	case mouse.ActionDrag:
+		return p.handleMouseDrag(action)
+	case mouse.ActionDragEnd:
+		return p.handleMouseDragEnd()
+	}
+	return nil
+}
+
+// handleMouseClick handles single click events.
+func (p *Plugin) handleMouseClick(action mouse.MouseAction) tea.Cmd {
+	if action.Region == nil {
+		return nil
+	}
+
+	switch action.Region.ID {
+	case regionSidebar:
+		p.activePane = PaneSidebar
+	case regionPreviewPane:
+		p.activePane = PanePreview
+	case regionPaneDivider:
+		// Start drag for pane resizing
+		p.mouseHandler.StartDrag(action.X, action.Y, regionPaneDivider, p.sidebarWidth)
+	case regionWorktreeItem:
+		// Click on worktree - select it
+		if idx, ok := action.Region.Data.(int); ok && idx >= 0 && idx < len(p.worktrees) {
+			p.selectedIdx = idx
+			p.ensureVisible()
+			p.activePane = PaneSidebar
+			return p.loadSelectedDiff()
+		}
+	case regionViewModeTab:
+		// Click on view mode toggle
+		if p.viewMode == ViewModeList {
+			p.viewMode = ViewModeKanban
+		} else if p.viewMode == ViewModeKanban {
+			p.viewMode = ViewModeList
+		}
+	case regionPreviewTab:
+		// Click on preview tab
+		if idx, ok := action.Region.Data.(int); ok && idx >= 0 && idx <= 2 {
+			p.previewTab = PreviewTab(idx)
+			p.previewOffset = 0
+		}
+	}
+	return nil
+}
+
+// handleMouseDoubleClick handles double-click events.
+func (p *Plugin) handleMouseDoubleClick(action mouse.MouseAction) tea.Cmd {
+	if action.Region == nil {
+		return nil
+	}
+
+	switch action.Region.ID {
+	case regionWorktreeItem:
+		// Double-click on worktree - could attach to tmux session
+		if idx, ok := action.Region.Data.(int); ok && idx >= 0 && idx < len(p.worktrees) {
+			p.selectedIdx = idx
+			p.activePane = PanePreview
+			// TODO: implement tmux attach
+		}
+	}
+	return nil
+}
+
+// handleMouseScroll handles scroll wheel events.
+func (p *Plugin) handleMouseScroll(action mouse.MouseAction) tea.Cmd {
+	delta := action.Delta
+	if action.Type == mouse.ActionScrollUp {
+		delta = -1
+	} else {
+		delta = 1
+	}
+
+	// Determine which pane based on region or position
+	regionID := ""
+	if action.Region != nil {
+		regionID = action.Region.ID
+	}
+
+	switch regionID {
+	case regionSidebar, regionWorktreeItem:
+		return p.scrollSidebar(delta)
+	case regionPreviewPane:
+		return p.scrollPreview(delta)
+	default:
+		// Fallback based on X position
+		sidebarW := (p.width * p.sidebarWidth) / 100
+		if action.X < sidebarW {
+			return p.scrollSidebar(delta)
+		}
+		return p.scrollPreview(delta)
+	}
+}
+
+// scrollSidebar scrolls the sidebar worktree list.
+func (p *Plugin) scrollSidebar(delta int) tea.Cmd {
+	if len(p.worktrees) == 0 {
+		return nil
+	}
+
+	newCursor := p.selectedIdx + delta
+	if newCursor < 0 {
+		newCursor = 0
+	}
+	if newCursor >= len(p.worktrees) {
+		newCursor = len(p.worktrees) - 1
+	}
+
+	if newCursor != p.selectedIdx {
+		p.selectedIdx = newCursor
+		p.ensureVisible()
+		return p.loadSelectedDiff()
+	}
+	return nil
+}
+
+// scrollPreview scrolls the preview pane content.
+func (p *Plugin) scrollPreview(delta int) tea.Cmd {
+	p.previewOffset += delta
+	if p.previewOffset < 0 {
+		p.previewOffset = 0
+	}
+	return nil
+}
+
+// handleMouseDrag handles drag motion events.
+func (p *Plugin) handleMouseDrag(action mouse.MouseAction) tea.Cmd {
+	if p.mouseHandler.DragRegion() == regionPaneDivider {
+		// Calculate new sidebar width based on drag
+		startValue := p.mouseHandler.DragStartValue()
+		newWidth := startValue + (action.DragDX * 100 / p.width) // Convert px delta to %
+
+		// Clamp to reasonable bounds (20% - 60%)
+		if newWidth < 20 {
+			newWidth = 20
+		}
+		if newWidth > 60 {
+			newWidth = 60
+		}
+		p.sidebarWidth = newWidth
+	}
+	return nil
+}
+
+// handleMouseDragEnd handles the end of a drag operation.
+func (p *Plugin) handleMouseDragEnd() tea.Cmd {
+	// Could persist sidebar width to state here
 	return nil
 }
 
@@ -389,14 +565,20 @@ func (p *Plugin) Commands() []plugin.Command {
 			{ID: "confirm", Name: "Create", Description: "Create the worktree", Context: "worktree-create", Priority: 2},
 		}
 	default:
+		// View toggle label changes based on current mode
+		viewToggleName := "Kanban"
+		if p.viewMode == ViewModeKanban {
+			viewToggleName = "List"
+		}
 		cmds := []plugin.Command{
 			{ID: "new-worktree", Name: "New", Description: "Create new worktree", Context: "worktree-list", Priority: 1},
-			{ID: "refresh", Name: "Refresh", Description: "Refresh worktree list", Context: "worktree-list", Priority: 2},
+			{ID: "toggle-view", Name: viewToggleName, Description: "Toggle list/kanban view", Context: "worktree-list", Priority: 2},
+			{ID: "refresh", Name: "Refresh", Description: "Refresh worktree list", Context: "worktree-list", Priority: 3},
 		}
 		if p.selectedWorktree() != nil {
 			cmds = append(cmds,
-				plugin.Command{ID: "delete-worktree", Name: "Delete", Description: "Delete selected worktree", Context: "worktree-list", Priority: 3},
-				plugin.Command{ID: "push", Name: "Push", Description: "Push branch to remote", Context: "worktree-list", Priority: 4},
+				plugin.Command{ID: "delete-worktree", Name: "Delete", Description: "Delete selected worktree", Context: "worktree-list", Priority: 4},
+				plugin.Command{ID: "push", Name: "Push", Description: "Push branch to remote", Context: "worktree-list", Priority: 5},
 			)
 		}
 		return cmds
