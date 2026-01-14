@@ -84,6 +84,8 @@ func (p *Plugin) View(width, height int) string {
 		return p.renderKanbanView(width, height)
 	case ViewModeTaskLink:
 		return p.renderTaskLinkModal(width, height)
+	case ViewModeMerge:
+		return p.renderMergeModal(width, height)
 	default:
 		return p.renderListView(width, height)
 	}
@@ -191,6 +193,13 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 
 	icon := lipgloss.NewStyle().Foreground(statusColor).Render(statusIcon)
 
+	// Check for conflicts
+	hasConflict := p.hasConflict(wt.Name, p.conflicts)
+	conflictIcon := ""
+	if hasConflict {
+		conflictIcon = lipgloss.NewStyle().Foreground(statusWaitingColor).Render(" ⚠")
+	}
+
 	// Name and time
 	name := wt.Name
 	timeStr := formatRelativeTime(wt.UpdatedAt)
@@ -201,13 +210,13 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 		statsStr = fmt.Sprintf("+%d -%d", wt.Stats.Additions, wt.Stats.Deletions)
 	}
 
-	// First line: icon, name, time
-	line1 := fmt.Sprintf(" %s %s", icon, name)
+	// First line: icon, name, conflict indicator, time
+	line1 := fmt.Sprintf(" %s %s%s", icon, name, conflictIcon)
 	if len(line1) < width-len(timeStr)-2 {
 		line1 = line1 + strings.Repeat(" ", width-len(line1)-len(timeStr)-1) + timeStr
 	}
 
-	// Second line: agent type, task ID, stats
+	// Second line: agent type, task ID, stats, conflict info
 	var parts []string
 	if wt.Agent != nil {
 		parts = append(parts, string(wt.Agent.Type))
@@ -219,6 +228,14 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 	}
 	if statsStr != "" {
 		parts = append(parts, statsStr)
+	}
+	// Show conflict info on the second line
+	if hasConflict {
+		conflictFiles := p.getConflictingFiles(wt.Name, p.conflicts)
+		if len(conflictFiles) > 0 {
+			conflictStr := fmt.Sprintf("⚠ %d conflicts", len(conflictFiles))
+			parts = append(parts, lipgloss.NewStyle().Foreground(statusWaitingColor).Render(conflictStr))
+		}
 	}
 	line2 := "   " + strings.Join(parts, "  ")
 
@@ -677,6 +694,136 @@ func (p *Plugin) renderTaskLinkModal(width, height int) string {
 // dimText renders dim placeholder text.
 func dimText(s string) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(s)
+}
+
+// renderMergeModal renders the merge workflow modal.
+func (p *Plugin) renderMergeModal(width, height int) string {
+	if p.mergeState == nil {
+		return p.renderListView(width, height)
+	}
+
+	// Modal dimensions
+	modalW := 70
+	if modalW > width-4 {
+		modalW = width - 4
+	}
+	modalH := height - 6
+	if modalH < 20 {
+		modalH = 20
+	}
+
+	var lines []string
+
+	// Title
+	title := fmt.Sprintf("Merge Workflow: %s", p.mergeState.Worktree.Name)
+	lines = append(lines, lipgloss.NewStyle().Bold(true).Render(title))
+	lines = append(lines, "")
+
+	// Progress indicators
+	steps := []MergeWorkflowStep{
+		MergeStepReviewDiff,
+		MergeStepPush,
+		MergeStepCreatePR,
+		MergeStepWaitingMerge,
+		MergeStepCleanup,
+	}
+
+	for _, step := range steps {
+		status := p.mergeState.StepStatus[step]
+		icon := "○" // pending
+		color := lipgloss.Color("240")
+
+		switch status {
+		case "running":
+			icon = "●"
+			color = lipgloss.Color("214") // yellow
+		case "done":
+			icon = "✓"
+			color = lipgloss.Color("42") // green
+		case "error":
+			icon = "✗"
+			color = lipgloss.Color("196") // red
+		}
+
+		// Highlight current step
+		stepName := step.String()
+		if step == p.mergeState.Step {
+			stepName = lipgloss.NewStyle().Bold(true).Render(stepName)
+		}
+
+		stepLine := fmt.Sprintf("  %s %s",
+			lipgloss.NewStyle().Foreground(color).Render(icon),
+			stepName,
+		)
+		lines = append(lines, stepLine)
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, strings.Repeat("─", min(modalW-4, 60)))
+	lines = append(lines, "")
+
+	// Step-specific content
+	switch p.mergeState.Step {
+	case MergeStepReviewDiff:
+		lines = append(lines, lipgloss.NewStyle().Bold(true).Render("Diff Summary:"))
+		lines = append(lines, "")
+		if p.mergeState.DiffSummary != "" {
+			// Truncate to fit modal
+			summaryLines := strings.Split(p.mergeState.DiffSummary, "\n")
+			maxLines := modalH - len(lines) - 4
+			if len(summaryLines) > maxLines {
+				summaryLines = summaryLines[:maxLines]
+				summaryLines = append(summaryLines, fmt.Sprintf("... (%d more lines)", len(strings.Split(p.mergeState.DiffSummary, "\n"))-maxLines))
+			}
+			for _, line := range summaryLines {
+				lines = append(lines, colorDiffLine(line, modalW-4))
+			}
+		} else {
+			lines = append(lines, dimText("Loading diff..."))
+		}
+		lines = append(lines, "")
+		lines = append(lines, dimText("Press Enter to push branch, Esc to cancel"))
+
+	case MergeStepPush:
+		lines = append(lines, "Pushing branch to remote...")
+
+	case MergeStepCreatePR:
+		lines = append(lines, "Creating pull request...")
+
+	case MergeStepWaitingMerge:
+		lines = append(lines, lipgloss.NewStyle().Bold(true).Render("Pull Request Created"))
+		lines = append(lines, "")
+		if p.mergeState.PRURL != "" {
+			lines = append(lines, fmt.Sprintf("URL: %s", p.mergeState.PRURL))
+		}
+		lines = append(lines, "")
+		lines = append(lines, "Waiting for PR to be merged...")
+		lines = append(lines, dimText("Checking status every 30 seconds"))
+		lines = append(lines, "")
+		lines = append(lines, dimText("Press Enter to check now, 'c' to skip to cleanup"))
+
+	case MergeStepCleanup:
+		lines = append(lines, "Cleaning up worktree and branch...")
+
+	case MergeStepDone:
+		lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42")).Render("✓ Merge workflow complete!"))
+		lines = append(lines, "")
+		lines = append(lines, "Worktree and branch have been cleaned up.")
+		lines = append(lines, "")
+		lines = append(lines, dimText("Press Enter to close"))
+	}
+
+	// Show error if any
+	if p.mergeState.Error != nil {
+		lines = append(lines, "")
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(
+			fmt.Sprintf("Error: %s", p.mergeState.Error.Error())))
+	}
+
+	content := strings.Join(lines, "\n")
+	modal := modalStyle.Width(modalW).Render(content)
+
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modal)
 }
 
 // formatRelativeTime formats a time as relative (e.g., "3m", "2h").

@@ -157,6 +157,12 @@ func (p *Plugin) doCreateWorktree(name, baseBranch, taskID string) (*Worktree, e
 		UpdatedAt:  time.Now(),
 	}
 
+	// Run post-creation setup (env files, symlinks, setup script)
+	if err := p.setupWorktree(wtPath, name); err != nil {
+		p.ctx.Logger.Warn("worktree setup had errors", "path", wtPath, "error", err)
+		// Don't fail creation for setup errors
+	}
+
 	return wt, nil
 }
 

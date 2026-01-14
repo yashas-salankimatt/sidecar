@@ -3,6 +3,7 @@ package worktree
 import (
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -72,7 +73,14 @@ func getDiffFromBase(workdir, baseBranch string) (string, error) {
 	var args []string
 	if err == nil {
 		// Use merge-base for cleaner diff
-		args = []string{"diff", string(mbOutput)[:40] + "..HEAD"}
+		// Trim whitespace and validate length before slicing
+		mbHash := strings.TrimSpace(string(mbOutput))
+		if len(mbHash) >= 40 {
+			args = []string{"diff", mbHash[:40] + "..HEAD"}
+		} else {
+			// Invalid merge-base output, fall back
+			args = []string{"diff", baseBranch + "..HEAD"}
+		}
 	} else {
 		// Fall back to direct comparison
 		args = []string{"diff", baseBranch + "..HEAD"}

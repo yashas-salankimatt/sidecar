@@ -14,6 +14,7 @@ const (
 	ViewModeKanban                   // Kanban board view
 	ViewModeCreate                   // New worktree modal
 	ViewModeTaskLink                 // Task link modal (for existing worktrees)
+	ViewModeMerge                    // Merge workflow modal
 )
 
 // FocusPane represents which pane is active in the split view.

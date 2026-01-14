@@ -71,6 +71,9 @@ type Plugin struct {
 	diffContent string
 	diffRaw     string
 
+	// Conflict detection state
+	conflicts []Conflict
+
 	// Create modal state
 	createName       string
 	createBaseBranch string
@@ -91,6 +94,9 @@ type Plugin struct {
 	cachedTaskID      string
 	cachedTask        *TaskDetails
 	cachedTaskFetched time.Time
+
+	// Merge workflow state
+	mergeState *MergeWorkflowState
 }
 
 // New creates a new worktree manager plugin.
@@ -149,6 +155,14 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 		ctx.Keymap.RegisterPluginBinding("Y", "approve-all", "worktree-list")
 		ctx.Keymap.RegisterPluginBinding("N", "reject", "worktree-list")
 
+		// Merge workflow binding
+		ctx.Keymap.RegisterPluginBinding("m", "merge-workflow", "worktree-list")
+
+		// Merge modal context
+		ctx.Keymap.RegisterPluginBinding("esc", "cancel", "worktree-merge")
+		ctx.Keymap.RegisterPluginBinding("enter", "continue", "worktree-merge")
+		ctx.Keymap.RegisterPluginBinding("c", "cleanup", "worktree-merge")
+
 		// Preview pane context
 		ctx.Keymap.RegisterPluginBinding("h", "focus-left", "worktree-preview")
 		ctx.Keymap.RegisterPluginBinding("left", "focus-left", "worktree-preview")
@@ -206,6 +220,13 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 				// Load linked task ID from .sidecar-task file
 				wt.TaskID = loadTaskLink(wt.Path)
 			}
+			// Detect conflicts across worktrees
+			cmds = append(cmds, p.loadConflicts())
+		}
+
+	case ConflictsDetectedMsg:
+		if msg.Err == nil {
+			p.conflicts = msg.Conflicts
 		}
 
 	case StatsLoadedMsg:
@@ -345,6 +366,49 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			p.cachedTaskFetched = time.Now()
 		}
 
+	case MergeStepCompleteMsg:
+		if p.mergeState != nil && p.mergeState.Worktree.Name == msg.WorktreeName {
+			if msg.Err != nil {
+				p.mergeState.Error = msg.Err
+				p.mergeState.StepStatus[msg.Step] = "error"
+			} else {
+				p.mergeState.StepStatus[msg.Step] = "done"
+				switch msg.Step {
+				case MergeStepReviewDiff:
+					p.mergeState.DiffSummary = msg.Data
+				case MergeStepCreatePR:
+					p.mergeState.PRURL = msg.Data
+				case MergeStepCleanup:
+					// Cleanup done, remove from worktree list
+					p.removeWorktreeByName(msg.WorktreeName)
+					if p.selectedIdx >= len(p.worktrees) && p.selectedIdx > 0 {
+						p.selectedIdx--
+					}
+					p.mergeState.Step = MergeStepDone
+				}
+			}
+		}
+
+	case CheckPRMergedMsg:
+		if p.mergeState != nil && p.mergeState.Worktree.Name == msg.WorktreeName {
+			if msg.Err != nil {
+				// Silently ignore check errors, will retry
+				cmds = append(cmds, p.schedulePRCheck(msg.WorktreeName, 30*time.Second))
+			} else if msg.Merged {
+				// PR was merged! Move to cleanup step
+				p.mergeState.StepStatus[MergeStepWaitingMerge] = "done"
+				cmds = append(cmds, p.advanceMergeStep())
+			} else {
+				// Not merged yet, check again later
+				cmds = append(cmds, p.schedulePRCheck(msg.WorktreeName, 30*time.Second))
+			}
+		}
+
+	case checkPRMergeMsg:
+		if p.mergeState != nil && p.mergeState.Worktree.Name == msg.WorktreeName {
+			cmds = append(cmds, p.checkPRMerged(p.mergeState.Worktree))
+		}
+
 	case reconnectedAgentsMsg:
 		return p, tea.Batch(msg.Cmds...)
 
@@ -404,6 +468,8 @@ func (p *Plugin) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return p.handleCreateKeys(msg)
 	case ViewModeTaskLink:
 		return p.handleTaskLinkKeys(msg)
+	case ViewModeMerge:
+		return p.handleMergeKeys(msg)
 	}
 	return nil
 }
@@ -522,6 +588,12 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 			p.taskSearchLoading = true
 			return p.loadOpenTasks()
 		}
+	case "m":
+		// Start merge workflow
+		wt := p.selectedWorktree()
+		if wt != nil {
+			return p.startMergeWorkflow(wt)
+		}
 	}
 	return nil
 }
@@ -638,6 +710,52 @@ func (p *Plugin) handleTaskLinkKeys(msg tea.KeyMsg) tea.Cmd {
 			p.taskSearchQuery += msg.String()
 			p.taskSearchFiltered = filterTasks(p.taskSearchQuery, p.taskSearchAll)
 			p.taskSearchIdx = 0
+		}
+	}
+	return nil
+}
+
+// handleMergeKeys handles keys in merge workflow modal.
+func (p *Plugin) handleMergeKeys(msg tea.KeyMsg) tea.Cmd {
+	if p.mergeState == nil {
+		p.viewMode = ViewModeList
+		return nil
+	}
+
+	switch msg.String() {
+	case "esc", "q":
+		p.cancelMergeWorkflow()
+		return nil
+
+	case "enter":
+		// Continue to next step based on current step
+		switch p.mergeState.Step {
+		case MergeStepReviewDiff:
+			// User reviewed diff, proceed to push
+			return p.advanceMergeStep()
+		case MergeStepWaitingMerge:
+			// Manual check for merge status
+			return p.checkPRMerged(p.mergeState.Worktree)
+		case MergeStepDone:
+			// Close modal
+			p.cancelMergeWorkflow()
+		}
+
+	case "c":
+		// Skip to cleanup (if PR is merged or user wants to force cleanup)
+		if p.mergeState.Step == MergeStepWaitingMerge {
+			p.mergeState.StepStatus[MergeStepWaitingMerge] = "done"
+			return p.advanceMergeStep()
+		}
+
+	case "s":
+		// Skip current step (for pushing, creating PR)
+		switch p.mergeState.Step {
+		case MergeStepReviewDiff:
+			// Skip push step if already pushed
+			p.mergeState.StepStatus[MergeStepReviewDiff] = "done"
+			p.mergeState.Step = MergeStepPush
+			return p.advanceMergeStep()
 		}
 	}
 	return nil
@@ -870,6 +988,22 @@ func (p *Plugin) Commands() []plugin.Command {
 			{ID: "cancel", Name: "Cancel", Description: "Cancel task linking", Context: "worktree-task-link", Priority: 1},
 			{ID: "select-task", Name: "Select", Description: "Link selected task", Context: "worktree-task-link", Priority: 2},
 		}
+	case ViewModeMerge:
+		cmds := []plugin.Command{
+			{ID: "cancel", Name: "Cancel", Description: "Cancel merge workflow", Context: "worktree-merge", Priority: 1},
+		}
+		if p.mergeState != nil {
+			switch p.mergeState.Step {
+			case MergeStepReviewDiff:
+				cmds = append(cmds, plugin.Command{ID: "continue", Name: "Push", Description: "Push branch", Context: "worktree-merge", Priority: 2})
+			case MergeStepWaitingMerge:
+				cmds = append(cmds, plugin.Command{ID: "continue", Name: "Check", Description: "Check merge status", Context: "worktree-merge", Priority: 2})
+				cmds = append(cmds, plugin.Command{ID: "cleanup", Name: "Cleanup", Description: "Skip to cleanup", Context: "worktree-merge", Priority: 3})
+			case MergeStepDone:
+				cmds = append(cmds, plugin.Command{ID: "continue", Name: "Done", Description: "Close modal", Context: "worktree-merge", Priority: 2})
+			}
+		}
+		return cmds
 	default:
 		// View toggle label changes based on current mode
 		viewToggleName := "Kanban"
@@ -886,31 +1020,32 @@ func (p *Plugin) Commands() []plugin.Command {
 			cmds = append(cmds,
 				plugin.Command{ID: "delete-worktree", Name: "Delete", Description: "Delete selected worktree", Context: "worktree-list", Priority: 4},
 				plugin.Command{ID: "push", Name: "Push", Description: "Push branch to remote", Context: "worktree-list", Priority: 5},
+				plugin.Command{ID: "merge-workflow", Name: "Merge", Description: "Start merge workflow", Context: "worktree-list", Priority: 6},
 			)
 			// Task linking
 			if wt.TaskID != "" {
 				cmds = append(cmds,
-					plugin.Command{ID: "link-task", Name: "Unlink", Description: "Unlink task", Context: "worktree-list", Priority: 6},
+					plugin.Command{ID: "link-task", Name: "Unlink", Description: "Unlink task", Context: "worktree-list", Priority: 7},
 				)
 			} else {
 				cmds = append(cmds,
-					plugin.Command{ID: "link-task", Name: "Task", Description: "Link task", Context: "worktree-list", Priority: 6},
+					plugin.Command{ID: "link-task", Name: "Task", Description: "Link task", Context: "worktree-list", Priority: 7},
 				)
 			}
 			// Agent commands
 			if wt.Agent == nil {
 				cmds = append(cmds,
-					plugin.Command{ID: "start-agent", Name: "Start", Description: "Start agent", Context: "worktree-list", Priority: 6},
+					plugin.Command{ID: "start-agent", Name: "Start", Description: "Start agent", Context: "worktree-list", Priority: 8},
 				)
 			} else {
 				cmds = append(cmds,
-					plugin.Command{ID: "attach", Name: "Attach", Description: "Attach to session", Context: "worktree-list", Priority: 6},
-					plugin.Command{ID: "stop-agent", Name: "Stop", Description: "Stop agent", Context: "worktree-list", Priority: 7},
+					plugin.Command{ID: "attach", Name: "Attach", Description: "Attach to session", Context: "worktree-list", Priority: 8},
+					plugin.Command{ID: "stop-agent", Name: "Stop", Description: "Stop agent", Context: "worktree-list", Priority: 9},
 				)
 				if wt.Status == StatusWaiting {
 					cmds = append(cmds,
-						plugin.Command{ID: "approve", Name: "Approve", Description: "Approve prompt", Context: "worktree-list", Priority: 8},
-						plugin.Command{ID: "reject", Name: "Reject", Description: "Reject prompt", Context: "worktree-list", Priority: 9},
+						plugin.Command{ID: "approve", Name: "Approve", Description: "Approve prompt", Context: "worktree-list", Priority: 10},
+						plugin.Command{ID: "reject", Name: "Reject", Description: "Reject prompt", Context: "worktree-list", Priority: 11},
 					)
 				}
 			}
@@ -926,6 +1061,8 @@ func (p *Plugin) FocusContext() string {
 		return "worktree-create"
 	case ViewModeTaskLink:
 		return "worktree-task-link"
+	case ViewModeMerge:
+		return "worktree-merge"
 	default:
 		if p.activePane == PanePreview {
 			return "worktree-preview"
