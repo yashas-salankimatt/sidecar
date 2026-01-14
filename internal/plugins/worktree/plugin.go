@@ -25,12 +25,15 @@ const (
 	dividerHitWidth = 3 // Wider hit target for drag
 
 	// Hit region IDs
-	regionSidebar       = "sidebar"
-	regionPreviewPane   = "preview-pane"
-	regionPaneDivider   = "pane-divider"
-	regionWorktreeItem  = "worktree-item"
-	regionViewModeTab   = "view-mode-tab"
-	regionPreviewTab    = "preview-tab"
+	regionSidebar             = "sidebar"
+	regionPreviewPane         = "preview-pane"
+	regionPaneDivider         = "pane-divider"
+	regionWorktreeItem        = "worktree-item"
+	regionViewModeTab         = "view-mode-tab"
+	regionPreviewTab          = "preview-tab"
+	regionAgentChoiceOption   = "agent-choice-option"
+	regionAgentChoiceConfirm  = "agent-choice-confirm"
+	regionAgentChoiceCancel   = "agent-choice-cancel"
 )
 
 // Plugin implements the worktree manager plugin.
@@ -110,8 +113,10 @@ type Plugin struct {
 	mergeState *MergeWorkflowState
 
 	// Agent choice modal state (attach vs restart)
-	agentChoiceWorktree *Worktree
-	agentChoiceIdx      int // 0=attach, 1=restart
+	agentChoiceWorktree    *Worktree
+	agentChoiceIdx         int // 0=attach, 1=restart
+	agentChoiceButtonFocus int // 0=options, 1=confirm, 2=cancel
+	agentChoiceButtonHover int // 0=none, 1=confirm, 2=cancel
 
 	// Initial reconnection tracking
 	initialReconnectDone bool
@@ -566,37 +571,58 @@ func (p *Plugin) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 // handleAgentChoiceKeys handles keys in agent choice modal.
 func (p *Plugin) handleAgentChoiceKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
+	case "tab":
+		// Cycle focus: options(0) -> confirm(1) -> cancel(2) -> options(0)
+		p.agentChoiceButtonFocus = (p.agentChoiceButtonFocus + 1) % 3
+	case "shift+tab":
+		// Reverse cycle
+		p.agentChoiceButtonFocus = (p.agentChoiceButtonFocus + 2) % 3
 	case "j", "down":
-		if p.agentChoiceIdx < 1 {
+		if p.agentChoiceButtonFocus == 0 && p.agentChoiceIdx < 1 {
 			p.agentChoiceIdx++
 		}
 	case "k", "up":
-		if p.agentChoiceIdx > 0 {
+		if p.agentChoiceButtonFocus == 0 && p.agentChoiceIdx > 0 {
 			p.agentChoiceIdx--
 		}
 	case "enter":
-		wt := p.agentChoiceWorktree
-		p.viewMode = ViewModeList
-		p.agentChoiceWorktree = nil
-		if wt == nil {
+		// If focused on cancel button, cancel
+		if p.agentChoiceButtonFocus == 2 {
+			p.viewMode = ViewModeList
+			p.agentChoiceWorktree = nil
+			p.agentChoiceButtonFocus = 0
 			return nil
 		}
-		if p.agentChoiceIdx == 0 {
-			// Attach to existing session
-			return p.AttachToSession(wt)
-		}
-		// Restart agent: stop first, then start
-		return tea.Sequence(
-			p.StopAgent(wt),
-			func() tea.Msg {
-				return restartAgentMsg{worktree: wt}
-			},
-		)
+		// Confirm action
+		return p.executeAgentChoice()
 	case "esc", "q":
 		p.viewMode = ViewModeList
 		p.agentChoiceWorktree = nil
+		p.agentChoiceButtonFocus = 0
 	}
 	return nil
+}
+
+// executeAgentChoice executes the selected agent choice action.
+func (p *Plugin) executeAgentChoice() tea.Cmd {
+	wt := p.agentChoiceWorktree
+	p.viewMode = ViewModeList
+	p.agentChoiceWorktree = nil
+	p.agentChoiceButtonFocus = 0
+	if wt == nil {
+		return nil
+	}
+	if p.agentChoiceIdx == 0 {
+		// Attach to existing session
+		return p.AttachToSession(wt)
+	}
+	// Restart agent: stop first, then start
+	return tea.Sequence(
+		p.StopAgent(wt),
+		func() tea.Msg {
+			return restartAgentMsg{worktree: wt}
+		},
+	)
 }
 
 // handleListKeys handles keys in list view (and kanban view).
@@ -708,7 +734,9 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		// Agent exists - show choice modal (attach or restart)
 		p.agentChoiceWorktree = wt
-		p.agentChoiceIdx = 0 // Default to attach
+		p.agentChoiceIdx = 0           // Default to attach
+		p.agentChoiceButtonFocus = 0   // Start with options focused
+		p.agentChoiceButtonHover = 0   // Clear hover state
 		p.viewMode = ViewModeAgentChoice
 		return nil
 	case "S":
@@ -1116,6 +1144,32 @@ func (p *Plugin) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		return p.handleMouseDrag(action)
 	case mouse.ActionDragEnd:
 		return p.handleMouseDragEnd()
+	case mouse.ActionHover:
+		return p.handleMouseHover(action)
+	}
+	return nil
+}
+
+// handleMouseHover handles hover events for visual feedback.
+func (p *Plugin) handleMouseHover(action mouse.MouseAction) tea.Cmd {
+	// Only handle hover in agent choice modal
+	if p.viewMode != ViewModeAgentChoice {
+		p.agentChoiceButtonHover = 0
+		return nil
+	}
+
+	if action.Region == nil {
+		p.agentChoiceButtonHover = 0
+		return nil
+	}
+
+	switch action.Region.ID {
+	case regionAgentChoiceConfirm:
+		p.agentChoiceButtonHover = 1
+	case regionAgentChoiceCancel:
+		p.agentChoiceButtonHover = 2
+	default:
+		p.agentChoiceButtonHover = 0
 	}
 	return nil
 }
@@ -1155,6 +1209,20 @@ func (p *Plugin) handleMouseClick(action mouse.MouseAction) tea.Cmd {
 			p.previewTab = PreviewTab(idx)
 			p.previewOffset = 0
 		}
+	case regionAgentChoiceOption:
+		// Click on agent choice option
+		if idx, ok := action.Region.Data.(int); ok && idx >= 0 && idx <= 1 {
+			p.agentChoiceIdx = idx
+			p.agentChoiceButtonFocus = 0
+		}
+	case regionAgentChoiceConfirm:
+		// Click confirm button
+		return p.executeAgentChoice()
+	case regionAgentChoiceCancel:
+		// Click cancel button
+		p.viewMode = ViewModeList
+		p.agentChoiceWorktree = nil
+		p.agentChoiceButtonFocus = 0
 	}
 	return nil
 }

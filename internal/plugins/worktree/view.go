@@ -110,12 +110,13 @@ func (p *Plugin) renderListView(width, height int) string {
 
 	// 3. Preview tab hit regions (highest priority for tabs)
 	// Tabs are rendered at Y=1 (first line inside panel border)
-	// X starts at sidebarW + dividerWidth + 1 (panel border offset)
-	previewPaneX := sidebarW + dividerWidth + 1 // +1 for left border
-	tabNames := []string{" Output ", " Diff ", " Task "}
+	// X starts at sidebarW + dividerWidth + 2 (1 for border + 1 for padding)
+	previewPaneX := sidebarW + dividerWidth + 2 // +1 for border, +1 for panel padding
+	// Tab widths: text is " Output " (8), " Diff " (6), " Task " (6)
+	// Plus BarChip Padding(0,1) adds 2 chars = 10, 8, 8 visual width
+	tabWidths := []int{10, 8, 8}
 	tabX := previewPaneX
-	for i, tabName := range tabNames {
-		tabWidth := len(tabName)
+	for i, tabWidth := range tabWidths {
 		p.mouseHandler.HitMap.AddRect(regionPreviewTab, tabX, 1, tabWidth, 1, i)
 		tabX += tabWidth + 1 // +1 for spacing between tabs
 	}
@@ -216,8 +217,69 @@ func (p *Plugin) renderSidebarContent(width, height int) string {
 
 // renderWorktreeItem renders a single worktree list item.
 func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) string {
-	// Status indicator - use theme colors
+	isSelected := selected && p.activePane == PaneSidebar
+
+	// Status indicator
 	statusIcon := wt.Status.Icon()
+
+	// Check for conflicts
+	hasConflict := p.hasConflict(wt.Name, p.conflicts)
+	conflictIcon := ""
+	if hasConflict {
+		conflictIcon = " ⚠"
+	}
+
+	// Name and time
+	name := wt.Name
+	timeStr := formatRelativeTime(wt.UpdatedAt)
+
+	// Stats if available
+	statsStr := ""
+	if wt.Stats != nil && (wt.Stats.Additions > 0 || wt.Stats.Deletions > 0) {
+		statsStr = fmt.Sprintf("+%d -%d", wt.Stats.Additions, wt.Stats.Deletions)
+	}
+
+	// Build second line parts (plain text)
+	var parts []string
+	if wt.Agent != nil {
+		parts = append(parts, string(wt.Agent.Type))
+	} else if wt.ChosenAgentType != "" && wt.ChosenAgentType != AgentNone {
+		parts = append(parts, string(wt.ChosenAgentType))
+	} else {
+		parts = append(parts, "—")
+	}
+	if wt.TaskID != "" {
+		parts = append(parts, wt.TaskID)
+	}
+	if statsStr != "" {
+		parts = append(parts, statsStr)
+	}
+	if hasConflict {
+		conflictFiles := p.getConflictingFiles(wt.Name, p.conflicts)
+		if len(conflictFiles) > 0 {
+			parts = append(parts, fmt.Sprintf("⚠ %d conflicts", len(conflictFiles)))
+		}
+	}
+
+	// When selected, use plain text to ensure consistent background
+	if isSelected {
+		// Build plain text lines
+		line1 := fmt.Sprintf(" %s %s%s", statusIcon, name, conflictIcon)
+		line1Width := len(line1)
+		timeWidth := len(timeStr)
+		if line1Width < width-timeWidth-2 {
+			line1 = line1 + strings.Repeat(" ", width-line1Width-timeWidth-1) + timeStr
+		}
+		line2 := "   " + strings.Join(parts, "  ")
+		// Pad line2 to full width for consistent background
+		if len(line2) < width {
+			line2 = line2 + strings.Repeat(" ", width-len(line2))
+		}
+		content := line1 + "\n" + line2
+		return styles.ListItemSelected.Width(width).Render(content)
+	}
+
+	// Not selected - use colored styles for visual interest
 	var statusStyle lipgloss.Style
 	switch wt.Status {
 	case StatusActive:
@@ -231,67 +293,46 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 	default:
 		statusStyle = styles.Muted // Gray for paused
 	}
-
 	icon := statusStyle.Render(statusIcon)
 
-	// Check for conflicts
-	hasConflict := p.hasConflict(wt.Name, p.conflicts)
-	conflictIcon := ""
+	// Apply conflict style
+	styledConflictIcon := ""
 	if hasConflict {
-		conflictIcon = styles.StatusModified.Render(" ⚠")
+		styledConflictIcon = styles.StatusModified.Render(" ⚠")
 	}
 
-	// Name and time
-	name := wt.Name
-	timeStr := formatRelativeTime(wt.UpdatedAt)
-
-	// Stats if available
-	statsStr := ""
-	if wt.Stats != nil && (wt.Stats.Additions > 0 || wt.Stats.Deletions > 0) {
-		statsStr = fmt.Sprintf("+%d -%d", wt.Stats.Additions, wt.Stats.Deletions)
+	// For non-selected, style parts individually
+	var styledParts []string
+	if wt.Agent != nil {
+		styledParts = append(styledParts, string(wt.Agent.Type))
+	} else if wt.ChosenAgentType != "" && wt.ChosenAgentType != AgentNone {
+		styledParts = append(styledParts, dimText(string(wt.ChosenAgentType)))
+	} else {
+		styledParts = append(styledParts, "—")
+	}
+	if wt.TaskID != "" {
+		styledParts = append(styledParts, wt.TaskID)
+	}
+	if statsStr != "" {
+		styledParts = append(styledParts, statsStr)
+	}
+	if hasConflict {
+		conflictFiles := p.getConflictingFiles(wt.Name, p.conflicts)
+		if len(conflictFiles) > 0 {
+			styledParts = append(styledParts, styles.StatusModified.Render(fmt.Sprintf("⚠ %d conflicts", len(conflictFiles))))
+		}
 	}
 
-	// First line: icon, name, conflict indicator, time
-	// Use ansi.StringWidth for proper width calculation with ANSI escape codes
-	line1 := fmt.Sprintf(" %s %s%s", icon, name, conflictIcon)
+	// Build lines with styled elements
+	line1 := fmt.Sprintf(" %s %s%s", icon, name, styledConflictIcon)
 	line1Width := ansi.StringWidth(line1)
 	timeWidth := ansi.StringWidth(timeStr)
 	if line1Width < width-timeWidth-2 {
 		line1 = line1 + strings.Repeat(" ", width-line1Width-timeWidth-1) + timeStr
 	}
+	line2 := "   " + strings.Join(styledParts, "  ")
 
-	// Second line: agent type, task ID, stats, conflict info
-	var parts []string
-	if wt.Agent != nil {
-		parts = append(parts, string(wt.Agent.Type))
-	} else if wt.ChosenAgentType != "" && wt.ChosenAgentType != AgentNone {
-		// Show chosen agent type even when not running (dimmed)
-		parts = append(parts, dimText(string(wt.ChosenAgentType)))
-	} else {
-		parts = append(parts, "—")
-	}
-	if wt.TaskID != "" {
-		parts = append(parts, wt.TaskID)
-	}
-	if statsStr != "" {
-		parts = append(parts, statsStr)
-	}
-	// Show conflict info on the second line
-	if hasConflict {
-		conflictFiles := p.getConflictingFiles(wt.Name, p.conflicts)
-		if len(conflictFiles) > 0 {
-			conflictStr := fmt.Sprintf("⚠ %d conflicts", len(conflictFiles))
-			parts = append(parts, styles.StatusModified.Render(conflictStr))
-		}
-	}
-	line2 := "   " + strings.Join(parts, "  ")
-
-	// Combine lines
 	content := line1 + "\n" + line2
-
-	if selected && p.activePane == PaneSidebar {
-		return styles.ListItemSelected.Width(width).Render(content)
-	}
 	return styles.ListItemNormal.Width(width).Render(content)
 }
 
@@ -925,7 +966,8 @@ func (p *Plugin) renderAgentChoiceModal(width, height int) string {
 	options := []string{"Attach to session", "Restart agent"}
 	for i, opt := range options {
 		prefix := "  "
-		if i == p.agentChoiceIdx {
+		selected := i == p.agentChoiceIdx && p.agentChoiceButtonFocus == 0
+		if selected {
 			prefix = "> "
 			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Render(prefix + opt))
 		} else {
@@ -935,10 +977,48 @@ func (p *Plugin) renderAgentChoiceModal(width, height int) string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(dimText("↑/↓ navigate  Enter select  Esc cancel"))
+
+	// Render buttons with focus/hover states
+	confirmStyle := styles.Button
+	cancelStyle := styles.Button
+	if p.agentChoiceButtonFocus == 1 {
+		confirmStyle = styles.ButtonFocused
+	} else if p.agentChoiceButtonHover == 1 {
+		confirmStyle = styles.ButtonHover
+	}
+	if p.agentChoiceButtonFocus == 2 {
+		cancelStyle = styles.ButtonFocused
+	} else if p.agentChoiceButtonHover == 2 {
+		cancelStyle = styles.ButtonHover
+	}
+	sb.WriteString(confirmStyle.Render(" Confirm "))
+	sb.WriteString("  ")
+	sb.WriteString(cancelStyle.Render(" Cancel "))
 
 	content := sb.String()
 	modal := modalStyle.Width(modalW).Render(content)
+
+	// Register hit regions for the modal
+	// Calculate modal position (centered)
+	modalHeight := lipgloss.Height(modal)
+	modalStartX := (width - modalW) / 2
+	modalStartY := (height - modalHeight) / 2
+
+	// Hit regions for options (inside modal content area)
+	// Modal border (1) + padding (1) = 2, plus title lines (2) + empty (1) + message (2) + empty (1) = 6
+	optionY := modalStartY + 2 + 5 // border+padding + header lines
+	optionX := modalStartX + 3     // border + padding + "  " prefix
+	for i := range options {
+		p.mouseHandler.HitMap.AddRect(regionAgentChoiceOption, optionX, optionY+i, modalW-6, 1, i)
+	}
+
+	// Hit regions for buttons
+	// Buttons are after options (2) + empty (1) = 3 more lines
+	buttonY := optionY + 3
+	confirmX := modalStartX + 3                       // border + padding
+	p.mouseHandler.HitMap.AddRect(regionAgentChoiceConfirm, confirmX, buttonY, 10, 1, nil)
+	cancelX := confirmX + 10 + 2                      // confirm width + spacing
+	p.mouseHandler.HitMap.AddRect(regionAgentChoiceCancel, cancelX, buttonY, 10, 1, nil)
 
 	return ui.OverlayModal(background, modal, width, height)
 }
