@@ -154,3 +154,8 @@ type TaskDetailsLoadedMsg struct {
 	Details *TaskDetails
 	Err     error
 }
+
+// restartAgentMsg signals that an agent should be restarted after stopping.
+type restartAgentMsg struct {
+	worktree *Worktree
+}

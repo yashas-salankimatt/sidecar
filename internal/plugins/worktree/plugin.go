@@ -108,6 +108,13 @@ type Plugin struct {
 
 	// Merge workflow state
 	mergeState *MergeWorkflowState
+
+	// Agent choice modal state (attach vs restart)
+	agentChoiceWorktree *Worktree
+	agentChoiceIdx      int // 0=attach, 1=restart
+
+	// Initial reconnection tracking
+	initialReconnectDone bool
 }
 
 // New creates a new worktree manager plugin.
@@ -163,12 +170,17 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 		// Task linking
 		ctx.Keymap.RegisterPluginBinding("t", "link-task", "worktree-list")
 
-		// Agent control bindings
+		// Agent control bindings - register for both sidebar and preview pane contexts
 		ctx.Keymap.RegisterPluginBinding("s", "start-agent", "worktree-list")
+		ctx.Keymap.RegisterPluginBinding("s", "start-agent", "worktree-preview")
 		ctx.Keymap.RegisterPluginBinding("S", "stop-agent", "worktree-list")
+		ctx.Keymap.RegisterPluginBinding("S", "stop-agent", "worktree-preview")
 		ctx.Keymap.RegisterPluginBinding("y", "approve", "worktree-list")
+		ctx.Keymap.RegisterPluginBinding("y", "approve", "worktree-preview")
 		ctx.Keymap.RegisterPluginBinding("Y", "approve-all", "worktree-list")
+		ctx.Keymap.RegisterPluginBinding("Y", "approve-all", "worktree-preview")
 		ctx.Keymap.RegisterPluginBinding("N", "reject", "worktree-list")
+		ctx.Keymap.RegisterPluginBinding("N", "reject", "worktree-preview")
 
 		// Merge workflow binding
 		ctx.Keymap.RegisterPluginBinding("m", "merge-workflow", "worktree-list")
@@ -196,6 +208,14 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 		// Task link modal context
 		ctx.Keymap.RegisterPluginBinding("esc", "cancel", "worktree-task-link")
 		ctx.Keymap.RegisterPluginBinding("enter", "select-task", "worktree-task-link")
+
+		// Agent choice modal context
+		ctx.Keymap.RegisterPluginBinding("esc", "cancel", "worktree-agent-choice")
+		ctx.Keymap.RegisterPluginBinding("enter", "select", "worktree-agent-choice")
+		ctx.Keymap.RegisterPluginBinding("j", "cursor-down", "worktree-agent-choice")
+		ctx.Keymap.RegisterPluginBinding("k", "cursor-up", "worktree-agent-choice")
+		ctx.Keymap.RegisterPluginBinding("down", "cursor-down", "worktree-agent-choice")
+		ctx.Keymap.RegisterPluginBinding("up", "cursor-up", "worktree-agent-choice")
 	}
 
 	return nil
@@ -203,10 +223,8 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 
 // Start begins async operations.
 func (p *Plugin) Start() tea.Cmd {
-	return tea.Batch(
-		p.refreshWorktrees(),
-		p.reconnectAgents(),
-	)
+	// Only refresh worktrees - reconnectAgents will be called after worktrees are loaded
+	return p.refreshWorktrees()
 }
 
 // Stop cleans up plugin resources.
@@ -246,6 +264,12 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			}
 			// Detect conflicts across worktrees
 			cmds = append(cmds, p.loadConflicts())
+
+			// Reconnect to existing tmux sessions after initial worktree load
+			if !p.initialReconnectDone {
+				p.initialReconnectDone = true
+				cmds = append(cmds, p.reconnectAgents())
+			}
 		}
 
 	case ConflictsDetectedMsg:
@@ -348,9 +372,23 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		delete(p.agents, msg.WorktreeName)
 		return p, nil
 
+	case restartAgentMsg:
+		// Start new agent after stop completed
+		if msg.worktree != nil {
+			agentType := msg.worktree.ChosenAgentType
+			if agentType == "" {
+				agentType = AgentClaude
+			}
+			return p, p.StartAgent(msg.worktree, agentType)
+		}
+		return p, nil
+
 	case TmuxAttachFinishedMsg:
 		// Clear attached state
 		p.attachedSession = ""
+
+		// Re-enable mouse after tea.ExecProcess (tmux attach disables it)
+		cmds = append(cmds, func() tea.Msg { return tea.EnableMouseAllMotion() })
 
 		// Resume polling and refresh to capture what happened while attached
 		if wt := p.findWorktree(msg.WorktreeName); wt != nil && wt.Agent != nil {
@@ -519,6 +557,44 @@ func (p *Plugin) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return p.handleTaskLinkKeys(msg)
 	case ViewModeMerge:
 		return p.handleMergeKeys(msg)
+	case ViewModeAgentChoice:
+		return p.handleAgentChoiceKeys(msg)
+	}
+	return nil
+}
+
+// handleAgentChoiceKeys handles keys in agent choice modal.
+func (p *Plugin) handleAgentChoiceKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "j", "down":
+		if p.agentChoiceIdx < 1 {
+			p.agentChoiceIdx++
+		}
+	case "k", "up":
+		if p.agentChoiceIdx > 0 {
+			p.agentChoiceIdx--
+		}
+	case "enter":
+		wt := p.agentChoiceWorktree
+		p.viewMode = ViewModeList
+		p.agentChoiceWorktree = nil
+		if wt == nil {
+			return nil
+		}
+		if p.agentChoiceIdx == 0 {
+			// Attach to existing session
+			return p.AttachToSession(wt)
+		}
+		// Restart agent: stop first, then start
+		return tea.Sequence(
+			p.StopAgent(wt),
+			func() tea.Msg {
+				return restartAgentMsg{worktree: wt}
+			},
+		)
+	case "esc", "q":
+		p.viewMode = ViewModeList
+		p.agentChoiceWorktree = nil
 	}
 	return nil
 }
@@ -623,9 +699,18 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 	case "s":
 		// Start agent on selected worktree
 		wt := p.selectedWorktree()
-		if wt != nil && wt.Agent == nil {
+		if wt == nil {
+			return nil
+		}
+		if wt.Agent == nil {
+			// No agent running - start new one
 			return p.StartAgent(wt, AgentClaude)
 		}
+		// Agent exists - show choice modal (attach or restart)
+		p.agentChoiceWorktree = wt
+		p.agentChoiceIdx = 0 // Default to attach
+		p.viewMode = ViewModeAgentChoice
+		return nil
 	case "S":
 		// Stop agent on selected worktree
 		wt := p.selectedWorktree()
@@ -1211,6 +1296,11 @@ func (p *Plugin) Commands() []plugin.Command {
 			}
 		}
 		return cmds
+	case ViewModeAgentChoice:
+		return []plugin.Command{
+			{ID: "cancel", Name: "Cancel", Description: "Cancel agent choice", Context: "worktree-agent-choice", Priority: 1},
+			{ID: "select", Name: "Select", Description: "Choose selected option", Context: "worktree-agent-choice", Priority: 2},
+		}
 	default:
 		// View toggle label changes based on current mode
 		viewToggleName := "Kanban"
@@ -1227,10 +1317,34 @@ func (p *Plugin) Commands() []plugin.Command {
 				{ID: "prev-tab", Name: "Tab←", Description: "Previous preview tab", Context: "worktree-preview", Priority: 3},
 				{ID: "next-tab", Name: "Tab→", Description: "Next preview tab", Context: "worktree-preview", Priority: 4},
 			}
+			// Also show agent commands in preview pane
+			wt := p.selectedWorktree()
+			if wt != nil {
+				if wt.Agent == nil {
+					cmds = append(cmds,
+						plugin.Command{ID: "start-agent", Name: "Start", Description: "Start agent", Context: "worktree-preview", Priority: 10},
+					)
+				} else {
+					cmds = append(cmds,
+						plugin.Command{ID: "start-agent", Name: "Agent", Description: "Agent options (attach/restart)", Context: "worktree-preview", Priority: 9},
+						plugin.Command{ID: "attach", Name: "Attach", Description: "Attach to session", Context: "worktree-preview", Priority: 10},
+						plugin.Command{ID: "stop-agent", Name: "Stop", Description: "Stop agent", Context: "worktree-preview", Priority: 11},
+					)
+					if wt.Status == StatusWaiting {
+						cmds = append(cmds,
+							plugin.Command{ID: "approve", Name: "Approve", Description: "Approve agent prompt", Context: "worktree-preview", Priority: 12},
+							plugin.Command{ID: "reject", Name: "Reject", Description: "Reject agent prompt", Context: "worktree-preview", Priority: 13},
+						)
+					}
+				}
+			}
 			return cmds
 		}
 
-		// Sidebar list commands
+		// Sidebar list commands - reorganized with unique priorities
+		// Priority 1-4: Base commands (always visible)
+		// Priority 5-8: Worktree-specific commands
+		// Priority 10-14: Agent commands (highest visibility when applicable)
 		cmds := []plugin.Command{
 			{ID: "new-worktree", Name: "New", Description: "Create new worktree", Context: "worktree-list", Priority: 1},
 			{ID: "toggle-view", Name: viewToggleName, Description: "Toggle list/kanban view", Context: "worktree-list", Priority: 2},
@@ -1239,6 +1353,26 @@ func (p *Plugin) Commands() []plugin.Command {
 		}
 		wt := p.selectedWorktree()
 		if wt != nil {
+			// Agent commands first (most context-dependent, highest visibility)
+			if wt.Agent == nil {
+				cmds = append(cmds,
+					plugin.Command{ID: "start-agent", Name: "Start", Description: "Start agent", Context: "worktree-list", Priority: 10},
+				)
+			} else {
+				cmds = append(cmds,
+					plugin.Command{ID: "start-agent", Name: "Agent", Description: "Agent options (attach/restart)", Context: "worktree-list", Priority: 9},
+					plugin.Command{ID: "attach", Name: "Attach", Description: "Attach to session", Context: "worktree-list", Priority: 10},
+					plugin.Command{ID: "stop-agent", Name: "Stop", Description: "Stop agent", Context: "worktree-list", Priority: 11},
+				)
+				if wt.Status == StatusWaiting {
+					cmds = append(cmds,
+						plugin.Command{ID: "approve", Name: "Approve", Description: "Approve agent prompt", Context: "worktree-list", Priority: 12},
+						plugin.Command{ID: "reject", Name: "Reject", Description: "Reject agent prompt", Context: "worktree-list", Priority: 13},
+						plugin.Command{ID: "approve-all", Name: "Approve All", Description: "Approve all agent prompts", Context: "worktree-list", Priority: 14},
+					)
+				}
+			}
+			// Worktree commands
 			cmds = append(cmds,
 				plugin.Command{ID: "delete-worktree", Name: "Delete", Description: "Delete selected worktree", Context: "worktree-list", Priority: 5},
 				plugin.Command{ID: "push", Name: "Push", Description: "Push branch to remote", Context: "worktree-list", Priority: 6},
@@ -1254,24 +1388,6 @@ func (p *Plugin) Commands() []plugin.Command {
 					plugin.Command{ID: "link-task", Name: "Task", Description: "Link task", Context: "worktree-list", Priority: 8},
 				)
 			}
-			// Agent commands (lower priority = more visible in footer)
-			if wt.Agent == nil {
-				cmds = append(cmds,
-					plugin.Command{ID: "start-agent", Name: "Start", Description: "Start agent", Context: "worktree-list", Priority: 5},
-				)
-			} else {
-				cmds = append(cmds,
-					plugin.Command{ID: "attach", Name: "Attach", Description: "Attach to session", Context: "worktree-list", Priority: 3},
-					plugin.Command{ID: "stop-agent", Name: "Stop", Description: "Stop agent", Context: "worktree-list", Priority: 5},
-				)
-				if wt.Status == StatusWaiting {
-					cmds = append(cmds,
-						plugin.Command{ID: "approve", Name: "Approve", Description: "Send 'y' to approve the agent's pending prompt", Context: "worktree-list", Priority: 2},
-						plugin.Command{ID: "approve-all", Name: "Approve All", Description: "Send 'y' to all agents with pending prompts", Context: "worktree-list", Priority: 4},
-						plugin.Command{ID: "reject", Name: "Reject", Description: "Send 'n' to reject the agent's pending prompt", Context: "worktree-list", Priority: 3},
-					)
-				}
-			}
 		}
 		return cmds
 	}
@@ -1286,6 +1402,8 @@ func (p *Plugin) FocusContext() string {
 		return "worktree-task-link"
 	case ViewModeMerge:
 		return "worktree-merge"
+	case ViewModeAgentChoice:
+		return "worktree-agent-choice"
 	default:
 		if p.activePane == PanePreview {
 			return "worktree-preview"

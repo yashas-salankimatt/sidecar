@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/marcus/sidecar/internal/styles"
 	"github.com/marcus/sidecar/internal/ui"
 )
@@ -45,6 +46,8 @@ func (p *Plugin) View(width, height int) string {
 		return p.renderTaskLinkModal(width, height)
 	case ViewModeMerge:
 		return p.renderMergeModal(width, height)
+	case ViewModeAgentChoice:
+		return p.renderAgentChoiceModal(width, height)
 	default:
 		return p.renderListView(width, height)
 	}
@@ -105,6 +108,18 @@ func (p *Plugin) renderListView(width, height int) string {
 	// 2. Divider region (high priority - for drag)
 	p.mouseHandler.HitMap.AddRect(regionPaneDivider, sidebarW, 0, dividerHitWidth, paneHeight, nil)
 
+	// 3. Preview tab hit regions (highest priority for tabs)
+	// Tabs are rendered at Y=1 (first line inside panel border)
+	// X starts at sidebarW + dividerWidth + 1 (panel border offset)
+	previewPaneX := sidebarW + dividerWidth + 1 // +1 for left border
+	tabNames := []string{" Output ", " Diff ", " Task "}
+	tabX := previewPaneX
+	for i, tabName := range tabNames {
+		tabWidth := len(tabName)
+		p.mouseHandler.HitMap.AddRect(regionPreviewTab, tabX, 1, tabWidth, 1, i)
+		tabX += tabWidth + 1 // +1 for spacing between tabs
+	}
+
 	// Render content for each pane
 	sidebarContent := p.renderSidebarContent(sidebarW-2, innerHeight)
 	previewContent := p.renderPreviewContent(previewW-2, innerHeight)
@@ -134,9 +149,18 @@ func (p *Plugin) renderSidebarContent(width, height int) string {
 		kanbanTab = "[Kanban]"
 	}
 	viewToggle := styles.Muted.Render(listTab + "|" + kanbanTab)
-	headerLine := header + strings.Repeat(" ", max(1, width-len("Worktrees")-len(listTab)-len(kanbanTab)-1)) + viewToggle
+	toggleWidth := len(listTab) + 1 + len(kanbanTab) // +1 for separator
+	headerLine := header + strings.Repeat(" ", max(1, width-len("Worktrees")-toggleWidth)) + viewToggle
 	lines = append(lines, headerLine)
 	lines = append(lines, "") // Empty line after header
+
+	// Register hit region for view mode toggle (Y=1 for header line inside border)
+	// X position is at the right side of the header
+	toggleX := width - toggleWidth
+	if toggleX < 0 {
+		toggleX = 0
+	}
+	p.mouseHandler.HitMap.AddRect(regionViewModeTab, toggleX, 1, toggleWidth, 1, nil)
 
 	// Track Y position for hit regions (add 3 for border + header + empty line)
 	currentY := 3
@@ -228,9 +252,12 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 	}
 
 	// First line: icon, name, conflict indicator, time
+	// Use ansi.StringWidth for proper width calculation with ANSI escape codes
 	line1 := fmt.Sprintf(" %s %s%s", icon, name, conflictIcon)
-	if len(line1) < width-len(timeStr)-2 {
-		line1 = line1 + strings.Repeat(" ", width-len(line1)-len(timeStr)-1) + timeStr
+	line1Width := ansi.StringWidth(line1)
+	timeWidth := ansi.StringWidth(timeStr)
+	if line1Width < width-timeWidth-2 {
+		line1 = line1 + strings.Repeat(" ", width-line1Width-timeWidth-1) + timeStr
 	}
 
 	// Second line: agent type, task ID, stats, conflict info
@@ -873,6 +900,49 @@ func (p *Plugin) renderTaskLinkModal(width, height int) string {
 	return ui.OverlayModal(background, modal, width, height)
 }
 
+// renderAgentChoiceModal renders the agent action choice modal.
+func (p *Plugin) renderAgentChoiceModal(width, height int) string {
+	// Render the background (list view)
+	background := p.renderListView(width, height)
+
+	if p.agentChoiceWorktree == nil {
+		return background
+	}
+
+	// Modal dimensions
+	modalW := 50
+	if modalW > width-4 {
+		modalW = width - 4
+	}
+
+	var sb strings.Builder
+	title := fmt.Sprintf("Agent Running: %s", p.agentChoiceWorktree.Name)
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Render(title))
+	sb.WriteString("\n\n")
+	sb.WriteString("An agent is already running on this worktree.\n")
+	sb.WriteString("What would you like to do?\n\n")
+
+	options := []string{"Attach to session", "Restart agent"}
+	for i, opt := range options {
+		prefix := "  "
+		if i == p.agentChoiceIdx {
+			prefix = "> "
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Render(prefix + opt))
+		} else {
+			sb.WriteString(dimText(prefix + opt))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(dimText("↑/↓ navigate  Enter select  Esc cancel"))
+
+	content := sb.String()
+	modal := modalStyle.Width(modalW).Render(content)
+
+	return ui.OverlayModal(background, modal, width, height)
+}
+
 // dimText renders dim placeholder text using theme style.
 func dimText(s string) string {
 	return styles.Muted.Render(s)
@@ -1066,16 +1136,22 @@ func (p *Plugin) renderKanbanView(width, height int) string {
 		return p.renderListView(width, height)
 	}
 
+	// Use styled separator characters for theme consistency
+	borderStyle := lipgloss.NewStyle().Foreground(styles.BorderNormal)
+	horizSep := borderStyle.Render("─")
+	vertSep := borderStyle.Render("│")
+
 	var lines []string
 
-	// Header with view mode toggle
+	// Header with view mode toggle (account for panel border width)
+	innerWidth := width - 4 // Account for panel borders
 	header := styles.Title.Render("Worktrees")
 	listTab := "List"
 	kanbanTab := "[Kanban]"
 	viewToggle := styles.Muted.Render(listTab + "|" + kanbanTab)
-	headerLine := header + strings.Repeat(" ", max(1, width-len("Worktrees")-len(listTab)-len(kanbanTab)-1)) + viewToggle
+	headerLine := header + strings.Repeat(" ", max(1, innerWidth-len("Worktrees")-len(listTab)-len(kanbanTab)-1)) + viewToggle
 	lines = append(lines, headerLine)
-	lines = append(lines, strings.Repeat("─", width))
+	lines = append(lines, strings.Repeat(horizSep, innerWidth))
 
 	// Group worktrees by status
 	columns := map[WorktreeStatus][]*Worktree{
@@ -1099,9 +1175,9 @@ func (p *Plugin) renderKanbanView(width, height int) string {
 		StatusError:   "✗ Error",
 	}
 
-	// Calculate column widths
+	// Calculate column widths (account for panel borders)
 	numCols := len(columnOrder)
-	colWidth := (width - numCols - 1) / numCols // -1 for separators
+	colWidth := (innerWidth - numCols - 1) / numCols // -1 for separators
 	if colWidth < 15 {
 		colWidth = 15
 	}
@@ -1113,11 +1189,11 @@ func (p *Plugin) renderKanbanView(width, height int) string {
 		title := fmt.Sprintf("%s (%d)", columnTitles[status], len(items))
 		colHeaders = append(colHeaders, styles.Title.Width(colWidth).Render(title))
 	}
-	lines = append(lines, strings.Join(colHeaders, "│"))
-	lines = append(lines, strings.Repeat("─", width))
+	lines = append(lines, strings.Join(colHeaders, vertSep))
+	lines = append(lines, strings.Repeat(horizSep, innerWidth))
 
-	// Calculate content height
-	contentHeight := height - 4 // header + 2 separators + column headers
+	// Calculate content height (account for panel border + header + separators)
+	contentHeight := height - 6 // panel borders (2) + header + 2 separators + column headers
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
@@ -1139,14 +1215,13 @@ func (p *Plugin) renderKanbanView(width, height int) string {
 			}
 			rowCells = append(rowCells, styles.ListItemNormal.Width(colWidth).Render(cell))
 		}
-		lines = append(lines, strings.Join(rowCells, "│"))
+		lines = append(lines, strings.Join(rowCells, vertSep))
 	}
 
-	// Pad to fill height
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
+	// Build content for panel
+	content := strings.Join(lines, "\n")
 
-	return strings.Join(lines[:height], "\n")
+	// Wrap in panel with gradient border (active since kanban is full-screen)
+	return styles.RenderPanel(content, width, height, true)
 }
 

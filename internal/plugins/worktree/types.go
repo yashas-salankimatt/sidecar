@@ -10,11 +10,12 @@ import (
 type ViewMode int
 
 const (
-	ViewModeList     ViewMode = iota // List view (default)
-	ViewModeKanban                   // Kanban board view
-	ViewModeCreate                   // New worktree modal
-	ViewModeTaskLink                 // Task link modal (for existing worktrees)
-	ViewModeMerge                    // Merge workflow modal
+	ViewModeList        ViewMode = iota // List view (default)
+	ViewModeKanban                       // Kanban board view
+	ViewModeCreate                       // New worktree modal
+	ViewModeTaskLink                     // Task link modal (for existing worktrees)
+	ViewModeMerge                        // Merge workflow modal
+	ViewModeAgentChoice                  // Agent action choice modal (attach/restart)
 )
 
 // FocusPane represents which pane is active in the split view.
@@ -100,7 +101,7 @@ var SkipPermissionsFlags = map[AgentType]string{
 	AgentClaude:   "--dangerously-skip-permissions",
 	AgentCodex:    "--dangerously-bypass-approvals-and-sandbox",
 	AgentGemini:   "--yolo",
-	AgentCursor:   "", // No known flag
+	AgentCursor:   "-f",
 	AgentOpenCode: "", // No known flag
 }
 

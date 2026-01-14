@@ -28,6 +28,7 @@ type AgentStartedMsg struct {
 	WorktreeName string
 	SessionName  string
 	AgentType    AgentType
+	Reconnected  bool  // True if we reconnected to an existing session
 	Err          error
 }
 
@@ -61,6 +62,7 @@ type reconnectedAgentsMsg struct {
 }
 
 // StartAgent creates a tmux session and starts an agent for a worktree.
+// If a session already exists, it reconnects to it instead of failing.
 func (p *Plugin) StartAgent(wt *Worktree, agentType AgentType) tea.Cmd {
 	return func() tea.Msg {
 		sessionName := tmuxSessionPrefix + sanitizeName(wt.Name)
@@ -68,7 +70,13 @@ func (p *Plugin) StartAgent(wt *Worktree, agentType AgentType) tea.Cmd {
 		// Check if session already exists
 		checkCmd := exec.Command("tmux", "has-session", "-t", sessionName)
 		if checkCmd.Run() == nil {
-			return AgentStartedMsg{Err: fmt.Errorf("session %s already exists", sessionName)}
+			// Session exists - reconnect to it instead of failing
+			return AgentStartedMsg{
+				WorktreeName:  wt.Name,
+				SessionName:   sessionName,
+				AgentType:     agentType,
+				Reconnected:   true, // Flag that we reconnected to existing session
+			}
 		}
 
 		// Create new detached session with working directory
@@ -162,6 +170,7 @@ func (p *Plugin) getAgentCommandWithContext(agentType AgentType, wt *Worktree) s
 }
 
 // StartAgentWithOptions creates a tmux session and starts an agent with options.
+// If a session already exists, it reconnects to it instead of failing.
 func (p *Plugin) StartAgentWithOptions(wt *Worktree, agentType AgentType, skipPerms bool) tea.Cmd {
 	return func() tea.Msg {
 		sessionName := tmuxSessionPrefix + sanitizeName(wt.Name)
@@ -169,7 +178,13 @@ func (p *Plugin) StartAgentWithOptions(wt *Worktree, agentType AgentType, skipPe
 		// Check if session already exists
 		checkCmd := exec.Command("tmux", "has-session", "-t", sessionName)
 		if checkCmd.Run() == nil {
-			return AgentStartedMsg{Err: fmt.Errorf("session %s already exists", sessionName)}
+			// Session exists - reconnect to it instead of failing
+			return AgentStartedMsg{
+				WorktreeName: wt.Name,
+				SessionName:  sessionName,
+				AgentType:    agentType,
+				Reconnected:  true,
+			}
 		}
 
 		// Create new detached session with working directory

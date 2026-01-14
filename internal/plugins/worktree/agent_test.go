@@ -194,7 +194,7 @@ func TestShouldShowSkipPermissions(t *testing.T) {
 		{AgentClaude, true},    // Has --dangerously-skip-permissions
 		{AgentCodex, true},     // Has --dangerously-bypass-approvals-and-sandbox
 		{AgentGemini, true},    // Has --yolo
-		{AgentCursor, false},   // No known flag
+		{AgentCursor, true},    // Has -f flag
 		{AgentOpenCode, false}, // No known flag
 	}
 
