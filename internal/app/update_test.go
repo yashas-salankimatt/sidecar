@@ -61,11 +61,16 @@ func TestIsRootContext(t *testing.T) {
 		{"git-status-diff", true},
 		{"file-browser-tree", true},
 		{"file-browser-preview", true},
+		{"worktree-list", true},
+		{"worktree-preview", true},
 		{"td-monitor", true},
 
 		// Non-root contexts (sub-views)
 		{"git-commit", false},
 		{"conversation-detail", false},
+		{"worktree-create", false},
+		{"worktree-task-link", false},
+		{"worktree-merge", false},
 	}
 
 	for _, tt := range tests {
