@@ -348,7 +348,8 @@ func (p *Plugin) unlinkTask(wt *Worktree) tea.Cmd {
 // loadOpenTasks fetches all open/in_progress tasks from td.
 func (p *Plugin) loadOpenTasks() tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("td", "list", "--json", "--status", "open,in_progress")
+		// Use --limit 500 to fetch more items (td defaults to 50)
+		cmd := exec.Command("td", "list", "--json", "--status", "open,in_progress", "--limit", "500")
 		cmd.Dir = p.ctx.WorkDir
 		output, err := cmd.Output()
 		if err != nil {
