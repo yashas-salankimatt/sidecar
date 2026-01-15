@@ -45,14 +45,15 @@ func (s MergeWorkflowStep) String() string {
 
 // MergeWorkflowState holds the state for the merge workflow modal.
 type MergeWorkflowState struct {
-	Worktree    *Worktree
-	Step        MergeWorkflowStep
-	DiffSummary string
-	PRTitle     string
-	PRBody      string
-	PRURL       string
-	Error       error
-	StepStatus  map[MergeWorkflowStep]string // "pending", "running", "done", "error"
+	Worktree         *Worktree
+	Step             MergeWorkflowStep
+	DiffSummary      string
+	PRTitle          string
+	PRBody           string
+	PRURL            string
+	Error            error
+	StepStatus       map[MergeWorkflowStep]string // "pending", "running", "done", "error", "skipped"
+	DeleteAfterMerge bool                         // true = delete worktree after merge (default)
 }
 
 // MergeStepCompleteMsg signals a merge workflow step completed.
@@ -174,11 +175,12 @@ func (p *Plugin) startMergeWorkflow(wt *Worktree) tea.Cmd {
 func (p *Plugin) proceedToMergeWorkflow(wt *Worktree) tea.Cmd {
 	// Initialize merge state
 	p.mergeState = &MergeWorkflowState{
-		Worktree:   wt,
-		Step:       MergeStepReviewDiff,
-		PRTitle:    wt.Branch, // Default title to branch name
-		PRBody:     "",
-		StepStatus: make(map[MergeWorkflowStep]string),
+		Worktree:         wt,
+		Step:             MergeStepReviewDiff,
+		PRTitle:          wt.Branch, // Default title to branch name
+		PRBody:           "",
+		StepStatus:       make(map[MergeWorkflowStep]string),
+		DeleteAfterMerge: true, // default to delete worktree after merge
 	}
 	p.mergeState.StepStatus[MergeStepReviewDiff] = "running"
 
@@ -407,11 +409,20 @@ func (p *Plugin) advanceMergeStep() tea.Cmd {
 		return p.schedulePRCheck(p.mergeState.Worktree.Name, 10*time.Second)
 
 	case MergeStepWaitingMerge:
-		// Mark WaitingMerge as done, move to cleanup
+		// Mark WaitingMerge as done
 		p.mergeState.StepStatus[MergeStepWaitingMerge] = "done"
-		p.mergeState.Step = MergeStepCleanup
-		p.mergeState.StepStatus[MergeStepCleanup] = "running"
-		return p.cleanupAfterMerge(p.mergeState.Worktree)
+
+		if p.mergeState.DeleteAfterMerge {
+			// Proceed to cleanup
+			p.mergeState.Step = MergeStepCleanup
+			p.mergeState.StepStatus[MergeStepCleanup] = "running"
+			return p.cleanupAfterMerge(p.mergeState.Worktree)
+		}
+		// Skip cleanup, go directly to done
+		p.mergeState.Step = MergeStepDone
+		p.mergeState.StepStatus[MergeStepDone] = "done"
+		p.mergeState.StepStatus[MergeStepCleanup] = "skipped"
+		return nil
 
 	case MergeStepCleanup:
 		// Done

@@ -1292,6 +1292,9 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 		case "error":
 			icon = "✗"
 			color = lipgloss.Color("196") // red
+		case "skipped":
+			icon = "○"
+			color = lipgloss.Color("240") // gray, same as pending
 		}
 
 		// Highlight current step
@@ -1353,11 +1356,34 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")
-		sb.WriteString("Waiting for PR to be merged...")
-		sb.WriteString("\n")
-		sb.WriteString(dimText("Checking status every 30 seconds"))
+		sb.WriteString("Checking merge status every 30 seconds...")
 		sb.WriteString("\n\n")
-		sb.WriteString(dimText("Press Enter to check now, 'c' to skip cleanup"))
+		sb.WriteString(strings.Repeat("─", min(modalW-4, 60)))
+		sb.WriteString("\n\n")
+
+		// Radio button selection
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("After merge:"))
+		sb.WriteString("\n\n")
+
+		// Option 1: Delete worktree (default)
+		if p.mergeState.DeleteAfterMerge {
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Render(" ● Delete worktree after merge"))
+		} else {
+			sb.WriteString(dimText(" ○ Delete worktree after merge"))
+		}
+		sb.WriteString("\n")
+
+		// Option 2: Keep worktree
+		if !p.mergeState.DeleteAfterMerge {
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Render(" ● Keep worktree"))
+		} else {
+			sb.WriteString(dimText(" ○ Keep worktree"))
+		}
+		sb.WriteString("\n\n")
+
+		sb.WriteString(dimText(" (This takes effect only once the PR is merged)"))
+		sb.WriteString("\n\n")
+		sb.WriteString(dimText("Enter: check now   Esc: exit   ↑/↓: change option"))
 
 	case MergeStepCleanup:
 		sb.WriteString("Cleaning up worktree and branch...")
@@ -1365,7 +1391,11 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 	case MergeStepDone:
 		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42")).Render("✓ Merge workflow complete!"))
 		sb.WriteString("\n\n")
-		sb.WriteString("Worktree and branch have been cleaned up.")
+		if p.mergeState.DeleteAfterMerge {
+			sb.WriteString("Worktree and branch have been cleaned up.")
+		} else {
+			sb.WriteString("PR merged. Worktree kept for further work.")
+		}
 		sb.WriteString("\n\n")
 		sb.WriteString(dimText("Press Enter to close"))
 	}

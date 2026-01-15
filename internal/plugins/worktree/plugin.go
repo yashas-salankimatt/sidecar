@@ -212,7 +212,8 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 		// Merge modal context
 		ctx.Keymap.RegisterPluginBinding("esc", "cancel", "worktree-merge")
 		ctx.Keymap.RegisterPluginBinding("enter", "continue", "worktree-merge")
-		ctx.Keymap.RegisterPluginBinding("c", "cleanup", "worktree-merge")
+		ctx.Keymap.RegisterPluginBinding("up", "select-delete", "worktree-merge")
+		ctx.Keymap.RegisterPluginBinding("down", "select-keep", "worktree-merge")
 
 		// Preview pane context
 		ctx.Keymap.RegisterPluginBinding("h", "focus-left", "worktree-preview")
@@ -1331,11 +1332,16 @@ func (p *Plugin) handleMergeKeys(msg tea.KeyMsg) tea.Cmd {
 			p.cancelMergeWorkflow()
 		}
 
-	case "c":
-		// Skip cleanup - close modal and leave worktree in place
+	case "up", "k":
+		// Select "Delete worktree after merge"
 		if p.mergeState.Step == MergeStepWaitingMerge {
-			p.cancelMergeWorkflow()
-			return nil
+			p.mergeState.DeleteAfterMerge = true
+		}
+
+	case "down", "j":
+		// Select "Keep worktree"
+		if p.mergeState.Step == MergeStepWaitingMerge {
+			p.mergeState.DeleteAfterMerge = false
 		}
 
 	case "s":
@@ -1742,7 +1748,6 @@ func (p *Plugin) Commands() []plugin.Command {
 				cmds = append(cmds, plugin.Command{ID: "continue", Name: "Push", Description: "Push branch", Context: "worktree-merge", Priority: 2})
 			case MergeStepWaitingMerge:
 				cmds = append(cmds, plugin.Command{ID: "continue", Name: "Check", Description: "Check merge status", Context: "worktree-merge", Priority: 2})
-				cmds = append(cmds, plugin.Command{ID: "skip-cleanup", Name: "Skip", Description: "Skip cleanup, keep worktree", Context: "worktree-merge", Priority: 3})
 			case MergeStepDone:
 				cmds = append(cmds, plugin.Command{ID: "continue", Name: "Done", Description: "Close modal", Context: "worktree-merge", Priority: 2})
 			}
