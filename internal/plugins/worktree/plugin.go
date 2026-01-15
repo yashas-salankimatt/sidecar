@@ -348,6 +348,13 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			if p.selectedIdx >= len(p.worktrees) && p.selectedIdx > 0 {
 				p.selectedIdx--
 			}
+			// Clear preview pane content to ensure old diff doesn't persist
+			p.diffContent = ""
+			p.diffRaw = ""
+			p.cachedTaskID = ""
+			p.cachedTask = nil
+			// Load diff for newly selected worktree
+			cmds = append(cmds, p.loadSelectedDiff())
 		}
 
 	case PushDoneMsg:
@@ -487,11 +494,8 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 
 	case UncommittedChangesCheckMsg:
 		if msg.Err != nil {
-			// Error checking changes, proceed to merge anyway
-			wt := p.findWorktree(msg.WorktreeName)
-			if wt != nil {
-				cmds = append(cmds, p.proceedToMergeWorkflow(wt))
-			}
+			// Error checking changes - cancel merge and return to list
+			p.viewMode = ViewModeList
 		} else if msg.HasChanges {
 			// Show commit modal
 			wt := p.findWorktree(msg.WorktreeName)

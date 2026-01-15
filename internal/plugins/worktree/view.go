@@ -333,6 +333,27 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 func (p *Plugin) renderPreviewContent(width, height int) string {
 	var lines []string
 
+	// Hide tabs when no worktree is selected
+	wt := p.selectedWorktree()
+	if wt == nil {
+		// Center the message vertically
+		emptyMsg := "No worktree selected"
+		emptyStartY := (height - 1) / 2
+		if emptyStartY < 0 {
+			emptyStartY = 0
+		}
+		for i := 0; i < emptyStartY; i++ {
+			lines = append(lines, "")
+		}
+		// Center horizontally
+		pad := (width - len(emptyMsg)) / 2
+		if pad < 0 {
+			pad = 0
+		}
+		lines = append(lines, dimText(strings.Repeat(" ", pad)+emptyMsg))
+		return strings.Join(lines, "\n")
+	}
+
 	// Tab header
 	tabs := p.renderTabs(width)
 	lines = append(lines, tabs)

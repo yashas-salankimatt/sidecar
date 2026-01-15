@@ -128,6 +128,12 @@ func (p *Plugin) checkUncommittedChanges(wt *Worktree) tea.Cmd {
 func (p *Plugin) stageAllAndCommit(wt *Worktree, message string) tea.Cmd {
 	return func() tea.Msg {
 		tree := gitstatus.NewFileTree(wt.Path)
+		if tree == nil {
+			return MergeCommitDoneMsg{
+				WorktreeName: wt.Name,
+				Err:          fmt.Errorf("failed to initialize git tree for %s", wt.Path),
+			}
+		}
 
 		// Stage all changes
 		if err := tree.StageAll(); err != nil {
