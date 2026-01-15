@@ -408,6 +408,17 @@ func (p *Plugin) handlePollAgent(worktreeName string) tea.Cmd {
 			waitingFor = extractPrompt(output)
 		}
 
+		// For supported agents: supplement tmux detection with session file analysis
+		// Session files are more reliable for detecting "waiting at prompt" state
+		if status == StatusActive {
+			if sessionStatus, ok := detectAgentSessionStatus(wt.Agent.Type, wt.Path); ok {
+				if sessionStatus == StatusWaiting {
+					status = StatusWaiting
+					waitingFor = "Waiting for input"
+				}
+			}
+		}
+
 		return AgentOutputMsg{
 			WorktreeName: worktreeName,
 			Output:       output,
@@ -456,6 +467,8 @@ func detectStatus(output string) WorktreeStatus {
 		"approve",
 		"confirm",
 		"do you want", // Common prompt
+		"❯",           // Claude Code input prompt (waiting for user)
+		"╰─❯",         // Claude Code prompt with tree line decoration
 	}
 
 	for _, pattern := range waitingPatterns {

@@ -119,6 +119,21 @@ func TestDetectStatus(t *testing.T) {
 			output:   "",
 			expected: StatusActive,
 		},
+		{
+			name:     "claude code prompt symbol",
+			output:   "Some output\n❯",
+			expected: StatusWaiting,
+		},
+		{
+			name:     "claude code prompt with tree line",
+			output:   "Some output\n╰─❯",
+			expected: StatusWaiting,
+		},
+		{
+			name:     "claude code prompt in multiline output",
+			output:   "Processing complete\nChanges applied successfully\n\n❯",
+			expected: StatusWaiting,
+		},
 	}
 
 	for _, tt := range tests {
