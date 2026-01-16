@@ -360,10 +360,10 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 func (p *Plugin) renderPreviewContent(width, height int) string {
 	var lines []string
 
-	// Hide tabs when no worktree is selected - show tmux guide instead
+	// Hide tabs when no worktree is selected - show welcome guide instead
 	wt := p.selectedWorktree()
 	if wt == nil {
-		return truncateAllLines(p.renderTmuxGuide(width, height), width)
+		return truncateAllLines(p.renderWelcomeGuide(width, height), width)
 	}
 
 	// Tab header
@@ -392,9 +392,24 @@ func (p *Plugin) renderPreviewContent(width, height int) string {
 	return truncateAllLines(result, width)
 }
 
-// renderTmuxGuide renders a helpful tmux guide when no worktree is selected.
-func (p *Plugin) renderTmuxGuide(width, height int) string {
+// renderWelcomeGuide renders a helpful guide when no worktree is selected.
+func (p *Plugin) renderWelcomeGuide(width, height int) string {
 	var lines []string
+
+	// Section Style
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+
+	// Git Worktree Explanation
+	lines = append(lines, sectionStyle.Render("Git Worktrees: A Better Workflow"))
+	lines = append(lines, dimText("  • Parallel Development: Work on multiple branches simultaneously"))
+	lines = append(lines, dimText("    in separate directories."))
+	lines = append(lines, dimText("  • No Context Switching: Keep your editor/server running while"))
+	lines = append(lines, dimText("    reviewing a PR or fixing a bug."))
+	lines = append(lines, dimText("  • Isolated Environments: Each worktree has its own clean state,"))
+	lines = append(lines, dimText("    unaffected by other changes."))
+	lines = append(lines, "")
+	lines = append(lines, strings.Repeat("─", min(width-4, 60)))
+	lines = append(lines, "")
 
 	// Title
 	title := lipgloss.NewStyle().Bold(true).Render("tmux Quick Reference")
@@ -402,7 +417,6 @@ func (p *Plugin) renderTmuxGuide(width, height int) string {
 	lines = append(lines, "")
 
 	// Section: Attaching to agent sessions
-	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
 	lines = append(lines, sectionStyle.Render("Agent Sessions"))
 	lines = append(lines, dimText("  Enter      Attach to selected worktree session"))
 	lines = append(lines, dimText("  Ctrl-b d   Detach from session (return here)"))
@@ -629,19 +643,27 @@ func (p *Plugin) renderCommitStatusHeader(width int) string {
 
 // renderDiffContent renders git diff using the shared diff renderer.
 func (p *Plugin) renderDiffContent(width, height int) string {
-	if p.diffRaw == "" {
-		wt := p.selectedWorktree()
-		if wt == nil {
-			return dimText("No worktree selected")
-		}
-		return dimText("No changes")
+	wt := p.selectedWorktree()
+	if wt == nil {
+		return dimText("No worktree selected")
 	}
 
-	// Render commit status header
-	header := p.renderCommitStatusHeader(width)
+	// Render commit status header if it belongs to current worktree
+	header := ""
+	if p.commitStatusWorktree == wt.Name {
+		header = p.renderCommitStatusHeader(width)
+	}
+
 	headerHeight := 0
 	if header != "" {
 		headerHeight = lipgloss.Height(header) + 1 // +1 for blank line
+	}
+
+	if p.diffRaw == "" {
+		if header != "" {
+			return header + "\n" + dimText("No uncommitted changes")
+		}
+		return dimText("No changes")
 	}
 
 	// Adjust available height for diff content
