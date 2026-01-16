@@ -6,6 +6,21 @@ import (
 	"strings"
 )
 
+// normalizePath converts a path to absolute form and resolves symlinks.
+// This ensures consistent path comparison across different path formats.
+func normalizePath(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	// Try to resolve symlinks; if it fails (e.g., path doesn't exist), use absolute path
+	resolved, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return filepath.Clean(absPath), nil
+	}
+	return filepath.Clean(resolved), nil
+}
+
 // WorktreeInfo contains information about a git worktree.
 type WorktreeInfo struct {
 	Path   string // Absolute path to the worktree
@@ -92,15 +107,18 @@ func GetMainWorktreePath(workDir string) string {
 // GetWorktreeName returns the worktree name for display (branch name or directory name).
 // Returns empty string if workDir is not in a worktree or is the main worktree.
 func GetWorktreeName(workDir string) string {
-	absPath, err := filepath.Abs(workDir)
+	cleanPath, err := normalizePath(workDir)
 	if err != nil {
 		return ""
 	}
-	cleanPath := filepath.Clean(absPath)
 
 	worktrees := GetWorktrees(workDir)
 	for _, wt := range worktrees {
-		if wt.Path == cleanPath && !wt.IsMain {
+		normalizedWtPath, err := normalizePath(wt.Path)
+		if err != nil {
+			continue
+		}
+		if normalizedWtPath == cleanPath && !wt.IsMain {
 			if wt.Branch != "" {
 				return wt.Branch
 			}
@@ -128,15 +146,18 @@ func GetAllRelatedPaths(workDir string) []string {
 
 // IsWorktree returns true if workDir is a linked worktree (not the main worktree).
 func IsWorktree(workDir string) bool {
-	absPath, err := filepath.Abs(workDir)
+	cleanPath, err := normalizePath(workDir)
 	if err != nil {
 		return false
 	}
-	cleanPath := filepath.Clean(absPath)
 
 	worktrees := GetWorktrees(workDir)
 	for _, wt := range worktrees {
-		if wt.Path == cleanPath {
+		normalizedWtPath, err := normalizePath(wt.Path)
+		if err != nil {
+			continue
+		}
+		if normalizedWtPath == cleanPath {
 			return !wt.IsMain
 		}
 	}
@@ -146,10 +167,17 @@ func IsWorktree(workDir string) bool {
 // WorktreeNameForPath returns the worktree name for a given absolute path.
 // Returns empty string if the path is the main worktree or not found.
 func WorktreeNameForPath(workDir, targetPath string) string {
-	cleanTarget := filepath.Clean(targetPath)
+	cleanTarget, err := normalizePath(targetPath)
+	if err != nil {
+		return ""
+	}
 	worktrees := GetWorktrees(workDir)
 	for _, wt := range worktrees {
-		if wt.Path == cleanTarget && !wt.IsMain {
+		normalizedWtPath, err := normalizePath(wt.Path)
+		if err != nil {
+			continue
+		}
+		if normalizedWtPath == cleanTarget && !wt.IsMain {
 			if wt.Branch != "" {
 				return wt.Branch
 			}

@@ -1,9 +1,11 @@
 package worktree
 
 import (
+	"context"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -144,5 +146,22 @@ func splitLines(s string) []string {
 		lines = append(lines, s[start:])
 	}
 	return lines
+}
+
+// isCommitInBranch checks if a commit is reachable from a branch.
+// Uses git merge-base --is-ancestor with a 5-second timeout.
+// Returns false for empty inputs, non-existent refs, or if commit is not an ancestor.
+func isCommitInBranch(workdir, commit, branch string) bool {
+	if commit == "" || branch == "" || workdir == "" {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "merge-base", "--is-ancestor", commit, branch)
+	cmd.Dir = workdir
+	err := cmd.Run()
+	return err == nil
 }
 

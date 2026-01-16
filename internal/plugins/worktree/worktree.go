@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -506,4 +508,138 @@ func (p *Plugin) loadTaskDetails(taskID string) tea.Cmd {
 			},
 		}
 	}
+}
+
+// invalidBranchCharsRegex matches characters invalid in git branch names.
+var invalidBranchCharsRegex = regexp.MustCompile(`[\x00-\x1f\x7f ~:?*\[\\^]`)
+
+// ValidateBranchName validates a branch name per git-check-ref-format rules.
+// Returns (valid, errors) where errors lists all validation failures.
+func ValidateBranchName(name string) (bool, []string) {
+	var errors []string
+
+	if name == "" {
+		errors = append(errors, "branch name cannot be empty")
+		return false, errors
+	}
+
+	// Cannot start with dot or dash
+	if strings.HasPrefix(name, ".") {
+		errors = append(errors, "cannot start with '.'")
+	}
+	if strings.HasPrefix(name, "-") {
+		errors = append(errors, "cannot start with '-'")
+	}
+
+	// Cannot end with '/' or '.lock'
+	if strings.HasSuffix(name, "/") {
+		errors = append(errors, "cannot end with '/'")
+	}
+	if strings.HasSuffix(name, ".lock") {
+		errors = append(errors, "cannot end with '.lock'")
+	}
+
+	// Cannot contain '..'
+	if strings.Contains(name, "..") {
+		errors = append(errors, "cannot contain '..'")
+	}
+
+	// Cannot contain '//'
+	if strings.Contains(name, "//") {
+		errors = append(errors, "cannot contain '//'")
+	}
+
+	// Cannot contain '/.'
+	if strings.Contains(name, "/.") {
+		errors = append(errors, "cannot contain '/.'")
+	}
+
+	// Cannot be exactly '@' or contain '@{'
+	if name == "@" {
+		errors = append(errors, "cannot be exactly '@'")
+	}
+	if strings.Contains(name, "@{") {
+		errors = append(errors, "cannot contain '@{'")
+	}
+
+	// Check for invalid characters: space, ~, :, ?, *, [, \, ^, control chars (0-31), DEL (127)
+	for i, r := range name {
+		if r < 32 || r == 127 {
+			errors = append(errors, fmt.Sprintf("cannot contain control character at position %d", i))
+			break // Only report once
+		}
+	}
+	if invalidBranchCharsRegex.MatchString(name) {
+		errors = append(errors, "cannot contain space, ~, :, ?, *, [, \\, or ^")
+	}
+
+	return len(errors) == 0, errors
+}
+
+// SanitizeBranchName converts a string to a valid git branch name.
+// Applies transformations to make the name pass ValidateBranchName().
+func SanitizeBranchName(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	// Convert spaces and underscores to dashes
+	name = strings.ReplaceAll(name, " ", "-")
+	name = strings.ReplaceAll(name, "_", "-")
+
+	// Remove control characters and DEL
+	var b strings.Builder
+	for _, r := range name {
+		if r >= 32 && r != 127 && !unicode.IsControl(r) {
+			b.WriteRune(r)
+		}
+	}
+	name = b.String()
+
+	// Replace invalid characters with dashes
+	name = invalidBranchCharsRegex.ReplaceAllString(name, "-")
+
+	// Remove '.lock' suffix
+	for strings.HasSuffix(name, ".lock") {
+		name = strings.TrimSuffix(name, ".lock")
+	}
+
+	// Collapse consecutive dots to single dot
+	for strings.Contains(name, "..") {
+		name = strings.ReplaceAll(name, "..", ".")
+	}
+
+	// Remove '/.' sequences
+	for strings.Contains(name, "/.") {
+		name = strings.ReplaceAll(name, "/.", "/")
+	}
+
+	// Collapse consecutive slashes
+	for strings.Contains(name, "//") {
+		name = strings.ReplaceAll(name, "//", "/")
+	}
+
+	// Remove '@{' sequences
+	name = strings.ReplaceAll(name, "@{", "")
+
+	// Handle single '@'
+	if name == "@" {
+		name = "at"
+	}
+
+	// Remove leading dots and dashes
+	name = strings.TrimLeft(name, ".-")
+
+	// Remove trailing slashes
+	name = strings.TrimRight(name, "/")
+
+	// Collapse consecutive dashes
+	for strings.Contains(name, "--") {
+		name = strings.ReplaceAll(name, "--", "-")
+	}
+
+	// Final trim of leading/trailing dashes
+	name = strings.Trim(name, "-")
+
+	return name
 }
