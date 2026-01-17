@@ -857,20 +857,20 @@ func (p *Plugin) renderPromptPickerModal(width, height int) string {
 	modalY := (height - modalH) / 2
 
 	// Register hit region for filter input
-	// Layout from content start (modalY + 1, adjusted for OverlayModal centering):
+	// Layout from content start (modalY + 2 for border + padding):
 	// - header "Select Prompt..." (1 line)
 	// - blank from \n\n (1 line)
 	// - "Filter:" label (1 line)
 	// - bordered filter input (3 lines: border + content + border)
 	// Filter input starts at: 1 + 1 + 1 = 3 lines from content start
-	filterY := modalY + 1 + 3 // border offset + header + blank + label
+	filterY := modalY + 2 + 3 // border(1) + padding(1) + header + blank + label
 	p.mouseHandler.HitMap.AddRect(regionPromptFilter, modalX+2, filterY, 32, 3, nil) // height 3 for bordered input
 
 	// Register hit regions for prompt items
 	// After filter input (3 lines) + blank (1 line) + column headers (1 line) + separator (1 line) = 6 more lines
 	// Total from content start: 3 (before filter) + 3 (filter) + 1 (blank) + 1 (headers) + 1 (separator) = 9
 	// "None" option is first, then filtered prompts
-	itemStartY := modalY + 1 + 9 // border offset + header + blank + label + bordered-filter + blank + col-headers + separator
+	itemStartY := modalY + 2 + 9 // border(1) + padding(1) + header + blank + label + bordered-filter + blank + col-headers + separator
 	itemHeight := 1              // Each prompt item is 1 line
 
 	// "None" option at index -1
