@@ -1092,10 +1092,7 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Choose Merge Method:"))
 		sb.WriteString("\n\n")
 
-		baseBranch := p.mergeState.Worktree.BaseBranch
-		if baseBranch == "" {
-			baseBranch = detectDefaultBranch(p.mergeState.Worktree.Path)
-		}
+		baseBranch := resolveBaseBranch(p.mergeState.Worktree)
 
 		// Style helpers for selection and hover states
 		selectedStyle := func(s string) string {
@@ -1140,10 +1137,7 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 	case MergeStepDirectMerge:
 		sb.WriteString("Merging directly to base branch...")
 		sb.WriteString("\n\n")
-		baseBranch := p.mergeState.Worktree.BaseBranch
-		if baseBranch == "" {
-			baseBranch = detectDefaultBranch(p.mergeState.Worktree.Path)
-		}
+		baseBranch := resolveBaseBranch(p.mergeState.Worktree)
 		sb.WriteString(dimText(fmt.Sprintf("Merging '%s' into '%s'...", p.mergeState.Worktree.Branch, baseBranch)))
 
 	case MergeStepPush:
@@ -1211,10 +1205,7 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 		sb.WriteString(dimText("Select what to clean up:"))
 		sb.WriteString("\n\n")
 
-		baseBranch := p.mergeState.Worktree.BaseBranch
-		if baseBranch == "" {
-			baseBranch = detectDefaultBranch(p.mergeState.Worktree.Path)
-		}
+		baseBranch := resolveBaseBranch(p.mergeState.Worktree)
 
 		// Checkbox options
 		type checkboxOpt struct {

@@ -272,6 +272,15 @@ func detectDefaultBranch(workdir string) string {
 	return "main"
 }
 
+// resolveBaseBranch returns the worktree's BaseBranch if set,
+// otherwise detects the default branch from the worktree's repo.
+func resolveBaseBranch(wt *Worktree) string {
+	if wt.BaseBranch != "" {
+		return wt.BaseBranch
+	}
+	return detectDefaultBranch(wt.Path)
+}
+
 // getRemoteTrackingBranch returns the remote tracking branch for HEAD.
 func getRemoteTrackingBranch(workdir string) string {
 	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
