@@ -1191,7 +1191,7 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 
 		sb.WriteString(dimText(" (This takes effect only once the PR is merged)"))
 		sb.WriteString("\n\n")
-		sb.WriteString(dimText("Enter: check now   Esc: exit   ↑/↓: change option"))
+		sb.WriteString(dimText("Enter: check now   o: open PR   Esc: exit   ↑/↓: change option"))
 
 	case MergeStepPostMergeConfirmation:
 		// Success header
@@ -1241,6 +1241,9 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 
 			if p.mergeState.ConfirmationFocus == i {
 				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Bold(true).Render("> " + line[2:]))
+			} else if p.mergeConfirmCheckboxHover == i+1 {
+				// Hover state (subtle highlight)
+				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Render(line))
 			} else {
 				sb.WriteString(line)
 			}
@@ -1254,7 +1257,7 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 		sb.WriteString("\n\n")
 
 		// Pull section
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Update Current Branch"))
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Sync Local Branch"))
 		sb.WriteString("\n")
 
 		// Pull checkbox
@@ -1262,10 +1265,13 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 		if p.mergeState.PullAfterMerge {
 			pullCheckbox = "[x]"
 		}
-		pullLabel := fmt.Sprintf("Pull '%s' to current branch", baseBranch)
+		pullLabel := fmt.Sprintf("Update local '%s' from remote", baseBranch)
 		pullLine := fmt.Sprintf("  %s %s", pullCheckbox, pullLabel)
 		if p.mergeState.ConfirmationFocus == 3 {
 			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Bold(true).Render("> " + pullLine[2:]))
+		} else if p.mergeConfirmCheckboxHover == 4 {
+			// Hover state (subtle highlight)
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Render(pullLine))
 		} else {
 			sb.WriteString(pullLine)
 		}
@@ -1273,7 +1279,7 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 		if p.mergeState.CurrentBranch != "" {
 			sb.WriteString(dimText(fmt.Sprintf("      Current branch: %s", p.mergeState.CurrentBranch)))
 		} else {
-			sb.WriteString(dimText("      Pulls merged changes to your working branch"))
+			sb.WriteString(dimText(fmt.Sprintf("      Updates local %s to include merged PR", baseBranch)))
 		}
 		sb.WriteString("\n\n")
 
@@ -1286,9 +1292,15 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 
 		if p.mergeState.ConfirmationFocus == 4 {
 			confirmStyle = confirmStyle.Bold(true).Background(lipgloss.Color("42"))
+		} else if p.mergeConfirmButtonHover == 1 {
+			// Hover state for Clean Up button
+			confirmStyle = confirmStyle.Background(lipgloss.Color("75"))
 		}
 		if p.mergeState.ConfirmationFocus == 5 {
 			skipStyle = skipStyle.Bold(true).Background(lipgloss.Color("214"))
+		} else if p.mergeConfirmButtonHover == 2 {
+			// Hover state for Skip All button
+			skipStyle = skipStyle.Background(lipgloss.Color("245"))
 		}
 
 		sb.WriteString("  ")
