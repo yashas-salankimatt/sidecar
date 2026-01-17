@@ -5,7 +5,8 @@ This guide explains how to capture screenshots of Sidecar for documentation purp
 ## Prerequisites
 
 - `tmux` - for running sidecar in a detached session
-- `aha` - for converting ANSI terminal output to HTML (`brew install aha`)
+- `termshot` - for rendering terminal output as PNG (`brew install homeport/tap/termshot`)
+- `aha` (optional) - for HTML output (`brew install aha`)
 
 ## Terminal Size
 
@@ -43,7 +44,10 @@ Once attached:
 ./scripts/tmux-screenshot.sh capture sidecar-td
 ```
 
-This captures the current view and auto-converts to HTML (if `aha` is installed).
+This captures the current view and:
+1. Renders terminal output as PNG with proper fonts and colors (requires `termshot`)
+2. Optionally creates HTML backup (if `aha` is installed)
+3. Saves files to `docs/screenshots/`
 
 ### Step 4: Repeat or cleanup
 
@@ -54,12 +58,11 @@ Repeat steps 2-3 for additional screenshots, then:
 ```
 
 ## Script Commands
-
-| Command | Description |
+|| Command | Description |
 |---------|-------------|
 | `start` | Start sidecar in a tmux session |
 | `attach` | Attach to navigate (detach with Ctrl+A/B D) |
-| `capture NAME` | Capture current view to `docs/screenshots/NAME.html` |
+| `capture NAME` | Capture current view to `docs/screenshots/NAME.html` and `NAME.png` |
 | `list` | List existing screenshots |
 | `stop` | Quit sidecar and kill session |
 
@@ -93,6 +96,9 @@ For AI agents, run `tmux attach -t sidecar-screenshot` in **interact mode** to n
 ## Viewing Captures
 
 ```bash
-./scripts/tmux-screenshot.sh list    # List screenshots
-open docs/screenshots/sidecar-td.html # Open in browser
+./scripts/tmux-screenshot.sh list       # List screenshots
+open docs/screenshots/sidecar-td.html   # View HTML in browser
+open docs/screenshots/sidecar-td.png    # View PNG image
 ```
+
+Both HTML and PNG files are retained as artifacts. The PNG provides pixel-perfect rendering for documentation, while the HTML preserves the original ANSI-to-HTML conversion for reference.
