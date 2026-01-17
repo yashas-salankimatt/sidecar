@@ -125,7 +125,7 @@ See the [TD repository](https://github.com/marcus/td) for installation and CLI u
 
 Navigate project files with a tree view and syntax-highlighted preview.
 
-![File Browser](docs/screenshots/sidecar-file-browser.png)
+![File Browser](docs/screenshots/sidecar-files.png)
 
 **Features:**
 
@@ -136,6 +136,8 @@ Navigate project files with a tree view and syntax-highlighted preview.
 ### Worktrees
 
 Manage git worktrees for parallel development with integrated agent support. Create isolated branches as sibling directories, link tasks from TD, and launch coding agents directly from sidecar.
+
+![Worktrees](docs/screenshots/sidecar-worktrees.png)
 
 **Features:**
 
