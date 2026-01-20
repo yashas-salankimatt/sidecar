@@ -2,6 +2,19 @@
 
 All notable changes to sidecar are documented here.
 
+## [v0.31.0] - 2026-01-20
+
+### Features
+- **Worktree**: Project shell as first entry in worktree list
+
+### Bug Fixes
+- **Worktree**: Shell preview shows output immediately
+- **Worktree**: Auto-attach to existing shell with improved primer text
+- **Worktree**: Fixed shell preview, primer, and project switch issues
+- **Worktree**: Replace fixed sleep with retry loop in ensureShellAndAttach
+- **Project Switcher**: Better help modal
+- **Website**: Fixed hamburger menu navigation links
+
 ## [v0.30.0] - 2026-01-20
 
 ### Features
