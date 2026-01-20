@@ -293,6 +293,10 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			cmds = append(cmds, p.scheduleShellPoll(0)) // Immediate poll
 		}
 
+	case shellAttachAfterCreateMsg:
+		// Attach to shell after it was created
+		return p, p.attachToShell()
+
 	case ShellKilledMsg:
 		// Shell session killed, clear state
 		if p.shellSession != nil {

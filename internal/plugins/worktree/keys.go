@@ -330,10 +330,8 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 	case "enter":
 		// Shell entry: create or attach to shell session
 		if p.shellSelected {
-			if p.shellSession == nil {
-				return p.createShellSession()
-			}
-			return p.attachToShell()
+			// Always try to attach if session exists, creating tracking state if needed
+			return p.ensureShellAndAttach()
 		}
 		// Attach to tmux session if agent running, otherwise focus preview
 		wt := p.selectedWorktree()

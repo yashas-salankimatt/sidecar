@@ -285,31 +285,32 @@ func (p *Plugin) renderShellPrimer(width, height int) string {
 
 	// Description
 	lines = append(lines, dimText("A tmux session in your project directory for running"))
-	lines = append(lines, dimText("builds, dev servers, or quick terminal tasks without"))
-	lines = append(lines, dimText("creating a git worktree."))
-	lines = append(lines, "")
-	lines = append(lines, strings.Repeat("─", min(width-4, 50)))
+	lines = append(lines, dimText("builds, dev servers, or quick terminal tasks."))
 	lines = append(lines, "")
 
 	// Quick start
 	lines = append(lines, sectionStyle.Render("Quick Start"))
 	lines = append(lines, dimText("  Enter         Create and attach to shell"))
 	lines = append(lines, dimText("  K             Kill shell session"))
-	lines = append(lines, "")
-
-	// When attached
-	lines = append(lines, sectionStyle.Render("When Attached"))
 	lines = append(lines, dimText("  Ctrl-b d      Detach (return to sidecar)"))
-	lines = append(lines, dimText("  Ctrl-b [      Enter scroll mode"))
-	lines = append(lines, dimText("  q             Exit scroll mode"))
+	lines = append(lines, "")
+	lines = append(lines, strings.Repeat("─", min(width-4, 50)))
 	lines = append(lines, "")
 
-	// Use cases
-	lines = append(lines, sectionStyle.Render("Common Uses"))
-	lines = append(lines, dimText("  • npm run dev, go run, python manage.py"))
-	lines = append(lines, dimText("  • Running tests or builds"))
-	lines = append(lines, dimText("  • Quick git commands"))
-	lines = append(lines, dimText("  • Debugging without a worktree"))
+	// Shell vs Worktrees explanation
+	lines = append(lines, sectionStyle.Render("Shell vs Worktrees"))
+	lines = append(lines, "")
+	lines = append(lines, dimText("Shell: A single terminal in your project root."))
+	lines = append(lines, dimText("  Use for dev servers, builds, quick commands."))
+	lines = append(lines, "")
+	lines = append(lines, dimText("Worktrees: Separate git working directories, each"))
+	lines = append(lines, dimText("  with its own branch. Use for parallel development"))
+	lines = append(lines, dimText("  or running AI agents on isolated tasks."))
+	lines = append(lines, "")
+
+	// How to create worktree
+	lines = append(lines, sectionStyle.Render("Create a Worktree"))
+	lines = append(lines, dimText("  Press 'n' or click New in the sidebar"))
 
 	return strings.Join(lines, "\n")
 }

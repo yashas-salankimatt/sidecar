@@ -100,6 +100,43 @@ func (p *Plugin) attachToShell() tea.Cmd {
 	)
 }
 
+// ensureShellAndAttach creates shell session if needed, then attaches.
+// If session already exists (even without tracking state), it attaches directly.
+func (p *Plugin) ensureShellAndAttach() tea.Cmd {
+	if p.shellSessionName == "" {
+		return nil
+	}
+
+	// If session already exists, ensure we have tracking state and attach
+	if sessionExists(p.shellSessionName) {
+		// Set up tracking state if not already present
+		if p.shellSession == nil {
+			p.shellSession = &Agent{
+				Type:        AgentShell,
+				TmuxSession: p.shellSessionName,
+				OutputBuf:   NewOutputBuffer(outputBufferCap),
+				StartedAt:   time.Now(),
+				Status:      AgentStatusRunning,
+			}
+			p.managedSessions[p.shellSessionName] = true
+		}
+		return p.attachToShell()
+	}
+
+	// No session exists, create one then attach
+	return tea.Sequence(
+		p.createShellSession(),
+		func() tea.Msg {
+			// Small delay to ensure session is ready
+			time.Sleep(100 * time.Millisecond)
+			return shellAttachAfterCreateMsg{}
+		},
+	)
+}
+
+// shellAttachAfterCreateMsg triggers attachment after shell creation.
+type shellAttachAfterCreateMsg struct{}
+
 // killShellSession terminates the shell tmux session.
 func (p *Plugin) killShellSession() tea.Cmd {
 	if p.shellSessionName == "" {
