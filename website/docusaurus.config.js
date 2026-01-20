@@ -106,7 +106,7 @@ const config = {
       image: 'img/sidecar-social-card.jpg',
       metadata: [
         {name: 'twitter:card', content: 'summary_large_image'},
-        {name: 'twitter:image:alt', content: 'Sidecar - Run your AI coding team from one terminal'},
+        {name: 'twitter:image:alt', content: 'Sidecar - You might never open your editor again'},
       ],
       colorMode: {
         defaultMode: 'dark',
