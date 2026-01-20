@@ -156,7 +156,6 @@ func (p *Plugin) loadCommitStatus(wt *Worktree) tea.Cmd {
 	name := wt.Name
 	path := wt.Path
 	baseBranch := wt.BaseBranch
-	// Let getWorktreeCommits handle detection via detectDefaultBranch()
 
 	return func() tea.Msg {
 		commits, err := getWorktreeCommits(path, baseBranch)
