@@ -204,12 +204,224 @@ var (
 			MarkdownTheme: "dark",
 		},
 	}
+
+	// MolokaiTheme is a vibrant, high-contrast theme
+	MolokaiTheme = Theme{
+		Name:        "molokai",
+		DisplayName: "Molokai",
+		Colors: ColorPalette{
+			Primary:   "#F92672", // Pink
+			Secondary: "#66D9EF", // Blue
+			Accent:    "#A6E22E", // Green
+
+			Success: "#A6E22E", // Green
+			Warning: "#FD971F", // Orange
+			Error:   "#F92672", // Red
+			Info:    "#66D9EF", // Blue
+
+			TextPrimary:   "#F8F8F2",
+			TextSecondary: "#CFD0C2",
+			TextMuted:     "#75715E",
+			TextSubtle:    "#465457",
+
+			BgPrimary:   "#1B1D1E",
+			BgSecondary: "#272822",
+			BgTertiary:  "#3E3D32",
+			BgOverlay:   "#00000080",
+
+			BorderNormal: "#465457",
+			BorderActive: "#F92672",
+			BorderMuted:  "#3E3D32",
+
+			GradientBorderActive: []string{"#F92672", "#A6E22E"},
+			GradientBorderNormal: []string{"#465457", "#3E3D32"},
+			GradientBorderAngle:  45.0,
+
+			TabStyle:  "solid",
+			TabColors: []string{"#F92672"},
+
+			DiffAddFg:    "#A6E22E",
+			DiffAddBg:    "#13210C",
+			DiffRemoveFg: "#F92672",
+			DiffRemoveBg: "#210C11",
+
+			TextHighlight:    "#E6DB74", // Yellow
+			ButtonHover:      "#F92672",
+			TabTextInactive:  "#75715E",
+			Link:             "#66D9EF",
+			ToastSuccessText: "#1B1D1E",
+			ToastErrorText:   "#F8F8F2",
+
+			SyntaxTheme:   "monokai",
+			MarkdownTheme: "dark",
+		},
+	}
+
+	// NordTheme is an arctic, north-bluish color palette
+	NordTheme = Theme{
+		Name:        "nord",
+		DisplayName: "Nord",
+		Colors: ColorPalette{
+			Primary:   "#88C0D0", // Frost Cyan
+			Secondary: "#81A1C1", // Frost Blue
+			Accent:    "#EBCB8B", // Aurora Yellow
+
+			Success: "#A3BE8C", // Aurora Green
+			Warning: "#EBCB8B", // Aurora Yellow
+			Error:   "#BF616A", // Aurora Red
+			Info:    "#88C0D0", // Frost Cyan
+
+			TextPrimary:   "#D8DEE9", // Snow Storm 1
+			TextSecondary: "#E5E9F0", // Snow Storm 2
+			TextMuted:     "#4C566A", // Polar Night 4
+			TextSubtle:    "#434C5E", // Polar Night 3
+
+			BgPrimary:   "#2E3440", // Polar Night 1
+			BgSecondary: "#3B4252", // Polar Night 2
+			BgTertiary:  "#434C5E", // Polar Night 3
+			BgOverlay:   "#2E3440CC",
+
+			BorderNormal: "#4C566A",
+			BorderActive: "#88C0D0",
+			BorderMuted:  "#3B4252",
+
+			GradientBorderActive: []string{"#88C0D0", "#81A1C1"},
+			GradientBorderNormal: []string{"#434C5E", "#3B4252"},
+			GradientBorderAngle:  120.0,
+
+			TabStyle:  "minimal",
+			TabColors: []string{"#88C0D0"},
+
+			DiffAddFg:    "#A3BE8C",
+			DiffAddBg:    "#233129",
+			DiffRemoveFg: "#BF616A",
+			DiffRemoveBg: "#312325",
+
+			TextHighlight:    "#ECEFF4",
+			ButtonHover:      "#5E81AC", // Frost Dark Blue
+			TabTextInactive:  "#4C566A",
+			Link:             "#88C0D0",
+			ToastSuccessText: "#2E3440",
+			ToastErrorText:   "#E5E9F0",
+
+			SyntaxTheme:   "nord",
+			MarkdownTheme: "dark",
+		},
+	}
+
+	// SolarizedDarkTheme is a precision color scheme
+	SolarizedDarkTheme = Theme{
+		Name:        "solarized-dark",
+		DisplayName: "Solarized Dark",
+		Colors: ColorPalette{
+			Primary:   "#268BD2", // Blue
+			Secondary: "#2AA198", // Cyan
+			Accent:    "#B58900", // Yellow
+
+			Success: "#859900", // Green
+			Warning: "#B58900", // Yellow
+			Error:   "#DC322F", // Red
+			Info:    "#268BD2", // Blue
+
+			TextPrimary:   "#93A1A1", // Base1
+			TextSecondary: "#839496", // Base0
+			TextMuted:     "#586E75", // Base01
+			TextSubtle:    "#073642", // Base02
+
+			BgPrimary:   "#002B36", // Base03
+			BgSecondary: "#073642", // Base02
+			BgTertiary:  "#002B36", // Base03 (Repeat for depth)
+			BgOverlay:   "#00181ECC",
+
+			BorderNormal: "#586E75",
+			BorderActive: "#268BD2",
+			BorderMuted:  "#073642",
+
+			GradientBorderActive: []string{"#268BD2", "#2AA198"},
+			GradientBorderNormal: []string{"#586E75", "#073642"},
+			GradientBorderAngle:  90.0,
+
+			TabStyle:  "solid",
+			TabColors: []string{"#2AA198"},
+
+			DiffAddFg:    "#859900",
+			DiffAddBg:    "#002B36",
+			DiffRemoveFg: "#DC322F",
+			DiffRemoveBg: "#002B36",
+
+			TextHighlight:    "#FDF6E3", // Base3
+			ButtonHover:      "#CB4B16", // Orange
+			TabTextInactive:  "#586E75",
+			Link:             "#268BD2",
+			ToastSuccessText: "#FDF6E3",
+			ToastErrorText:   "#FDF6E3",
+
+			SyntaxTheme:   "solarized-dark",
+			MarkdownTheme: "dark",
+		},
+	}
+
+	// TokyoNightTheme is a clean, dark theme that celebrates the lights of Downtown Tokyo
+	TokyoNightTheme = Theme{
+		Name:        "tokyo-night",
+		DisplayName: "Tokyo Night",
+		Colors: ColorPalette{
+			Primary:   "#7AA2F7", // Blue
+			Secondary: "#BB9AF7", // Purple
+			Accent:    "#FF9E64", // Orange
+
+			Success: "#9ECE6A", // Green
+			Warning: "#E0AF68", // Yellow
+			Error:   "#F7768E", // Red
+			Info:    "#7DCFFF", // Cyan
+
+			TextPrimary:   "#C0CAF5",
+			TextSecondary: "#A9B1D6",
+			TextMuted:     "#565F89",
+			TextSubtle:    "#414868",
+
+			BgPrimary:   "#1A1B26",
+			BgSecondary: "#24283B",
+			BgTertiary:  "#414868",
+			BgOverlay:   "#15161ECC",
+
+			BorderNormal: "#565F89",
+			BorderActive: "#7AA2F7",
+			BorderMuted:  "#24283B",
+
+			GradientBorderActive: []string{"#7AA2F7", "#BB9AF7"},
+			GradientBorderNormal: []string{"#565F89", "#414868"},
+			GradientBorderAngle:  60.0,
+
+			TabStyle:  "gradient",
+			TabColors: []string{"#7AA2F7", "#BB9AF7", "#F7768E"},
+
+			DiffAddFg:    "#9ECE6A",
+			DiffAddBg:    "#283B4D",
+			DiffRemoveFg: "#F7768E",
+			DiffRemoveBg: "#3F2D3D",
+
+			TextHighlight:    "#C0CAF5",
+			ButtonHover:      "#BB9AF7",
+			TabTextInactive:  "#565F89",
+			Link:             "#73DACA",
+			ToastSuccessText: "#15161E",
+			ToastErrorText:   "#C0CAF5",
+
+			SyntaxTheme:   "tokyo-night",
+			MarkdownTheme: "dark",
+		},
+	}
 )
 
 // themeRegistry holds all available themes
 var themeRegistry = map[string]Theme{
-	"default": DefaultTheme,
-	"dracula": DraculaTheme,
+	"default":        DefaultTheme,
+	"dracula":        DraculaTheme,
+	"molokai":        MolokaiTheme,
+	"nord":           NordTheme,
+	"solarized-dark": SolarizedDarkTheme,
+	"tokyo-night":    TokyoNightTheme,
 }
 
 // currentTheme tracks the active theme name

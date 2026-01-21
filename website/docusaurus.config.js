@@ -123,6 +123,10 @@ const config = {
             label: 'Docs',
           },
           {
+            type: 'custom-themeSwitcher',
+            position: 'right',
+          },
+          {
             href: 'https://github.com/marcus/sidecar',
             label: 'GitHub',
             position: 'right',
