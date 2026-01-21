@@ -142,6 +142,9 @@ type Plugin struct {
 	diffViewMode  DiffViewMode              // Unified or side-by-side
 	multiFileDiff *gitstatus.MultiFileDiff  // Parsed multi-file diff with positions
 
+	// File picker modal state (gf command)
+	filePickerIdx int // Selected file index in picker
+
 	// Commit status header for diff view
 	commitStatusList     []CommitStatusInfo
 	commitStatusWorktree string // Name of worktree for cached status

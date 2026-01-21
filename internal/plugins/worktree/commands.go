@@ -57,6 +57,11 @@ func (p *Plugin) Commands() []plugin.Command {
 			{ID: "cancel", Name: "Cancel", Description: "Cancel rename", Context: "worktree-rename-shell", Priority: 1},
 			{ID: "confirm", Name: "Rename", Description: "Confirm new name", Context: "worktree-rename-shell", Priority: 2},
 		}
+	case ViewModeFilePicker:
+		return []plugin.Command{
+			{ID: "cancel", Name: "Cancel", Description: "Close file picker", Context: "worktree-file-picker", Priority: 1},
+			{ID: "select", Name: "Jump", Description: "Jump to selected file", Context: "worktree-file-picker", Priority: 2},
+		}
 	default:
 		// View toggle label changes based on current mode
 		viewToggleName := "Kanban"
@@ -90,6 +95,7 @@ func (p *Plugin) Commands() []plugin.Command {
 						cmds = append(cmds,
 							plugin.Command{ID: "next-file", Name: "}", Description: "Next file", Context: "worktree-preview", Priority: 6},
 							plugin.Command{ID: "prev-file", Name: "{", Description: "Previous file", Context: "worktree-preview", Priority: 7},
+							plugin.Command{ID: "file-picker", Name: "Files", Description: "Open file picker", Context: "worktree-preview", Priority: 8},
 						)
 					}
 				}
@@ -210,6 +216,8 @@ func (p *Plugin) FocusContext() string {
 		return "worktree-prompt-picker"
 	case ViewModeRenameShell:
 		return "worktree-rename-shell"
+	case ViewModeFilePicker:
+		return "worktree-file-picker"
 	default:
 		if p.activePane == PanePreview {
 			return "worktree-preview"
