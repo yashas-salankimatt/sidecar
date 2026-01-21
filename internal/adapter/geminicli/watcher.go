@@ -118,9 +118,11 @@ func NewWatcher(chatsDir string) (<-chan adapter.Event, error) {
 	return events, nil
 }
 
-// extractSessionID reads only the first 512 bytes of the session file
+// extractSessionID reads only the first 1024 bytes of the session file
 // and extracts the sessionId field using regex. This avoids reading
-// the entire file during watch events.
+// the entire file during watch events. We use 1024 bytes instead of 512
+// to ensure we capture the complete sessionId even if it appears near
+// the boundary (td-f9ce6102).
 func extractSessionID(path string) string {
 	file, err := os.Open(path)
 	if err != nil {
@@ -128,8 +130,8 @@ func extractSessionID(path string) string {
 	}
 	defer file.Close()
 
-	// Read only the first 512 bytes - sessionId is always near the start
-	buf := make([]byte, 512)
+	// Read first 1024 bytes - sessionId is always near the start
+	buf := make([]byte, 1024)
 	n, err := file.Read(buf)
 	if err != nil || n == 0 {
 		return ""

@@ -64,6 +64,8 @@ func NewWatcher(root string) (<-chan adapter.Event, error) {
 				if event.Op&fsnotify.Create != 0 {
 					if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 						_ = addWatchTree(watcher, event.Name)
+						// Scan for JSONL files that may exist before watch was added (td-ba9f8c12)
+						scanNewDirForSessions(event.Name, events)
 						continue
 					}
 				}
@@ -147,6 +149,26 @@ func addWatchTree(watcher *fsnotify.Watcher, root string) error {
 		}
 		if d.IsDir() {
 			_ = watcher.Add(path)
+		}
+		return nil
+	})
+}
+
+// scanNewDirForSessions checks for JSONL files in a newly created directory
+// and sends events for any found. This handles the race condition where a
+// directory and its files are created before the watcher is added (td-ba9f8c12).
+func scanNewDirForSessions(dir string, events chan<- adapter.Event) {
+	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(path, ".jsonl") {
+			sessionID := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+			select {
+			case events <- adapter.Event{Type: adapter.EventSessionCreated, SessionID: sessionID}:
+			default:
+				// Channel full, skip
+			}
 		}
 		return nil
 	})
