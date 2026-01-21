@@ -268,6 +268,14 @@ func GetNormalGradient() Gradient {
 	return NewGradient(colors, angle)
 }
 
+// GetFlashGradient returns a warning-colored gradient for flash effects.
+func GetFlashGradient() Gradient {
+	theme := GetCurrentTheme()
+	// Use warning color (amber) for flash effect
+	colors := []string{theme.Colors.Warning, theme.Colors.Accent}
+	return NewGradient(colors, DefaultGradientAngle)
+}
+
 // RenderPanel renders content in a panel with gradient borders.
 // This is the main function plugins should use for bordered panels.
 // active determines whether to use active (focused) or normal gradient.

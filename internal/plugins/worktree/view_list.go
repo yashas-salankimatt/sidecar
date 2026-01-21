@@ -3,6 +3,7 @@ package worktree
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -102,6 +103,12 @@ func (p *Plugin) renderListView(width, height int) string {
 		}
 
 		previewContent := p.renderPreviewContent(width-4, innerHeight)
+
+		// Check if preview should flash
+		flashActive := time.Since(p.flashPreviewTime) < flashDuration
+		if flashActive {
+			return styles.RenderPanelWithGradient(previewContent, width, paneHeight, styles.GetFlashGradient())
+		}
 		return styles.RenderPanel(previewContent, width, paneHeight, true)
 	}
 
@@ -152,9 +159,18 @@ func (p *Plugin) renderListView(width, height int) string {
 	sidebarContent := p.renderSidebarContent(sidebarW-4, innerHeight)
 	previewContent := p.renderPreviewContent(previewW-4, innerHeight)
 
+	// Check if preview should flash (unhandled key was pressed)
+	flashActive := time.Since(p.flashPreviewTime) < flashDuration
+
 	// Apply gradient border styles
 	leftPane := styles.RenderPanel(sidebarContent, sidebarW, paneHeight, sidebarActive)
-	rightPane := styles.RenderPanel(previewContent, previewW, paneHeight, previewActive)
+
+	var rightPane string
+	if flashActive && previewActive {
+		rightPane = styles.RenderPanelWithGradient(previewContent, previewW, paneHeight, styles.GetFlashGradient())
+	} else {
+		rightPane = styles.RenderPanel(previewContent, previewW, paneHeight, previewActive)
+	}
 
 	// Render visible divider between panes
 	divider := p.renderDivider(paneHeight)

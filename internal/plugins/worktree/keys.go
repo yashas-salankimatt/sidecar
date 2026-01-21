@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -655,6 +656,15 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 		wt := p.selectedWorktree()
 		if wt != nil {
 			return p.startMergeWorkflow(wt)
+		}
+	default:
+		// Unhandled key in preview pane - flash to indicate attach is needed
+		// Only flash if there's something to attach to (shell or worktree with agent)
+		if p.activePane == PanePreview {
+			canAttach := p.shellSelected || (p.selectedWorktree() != nil && p.selectedWorktree().Agent != nil)
+			if canAttach {
+				p.flashPreviewTime = time.Now()
+			}
 		}
 	}
 	return nil

@@ -3,6 +3,7 @@ package worktree
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/sidecar/internal/styles"
@@ -22,6 +23,7 @@ func (p *Plugin) renderPreviewContent(width, height int) string {
 	// (Output/Diff/Task tabs are not relevant for the project shell)
 	if p.shellSelected {
 		content := p.renderShellOutput(width, height)
+		content = p.prependFlashHint(content)
 		return p.truncateAllLines(content, width)
 	}
 
@@ -48,7 +50,20 @@ func (p *Plugin) renderPreviewContent(width, height int) string {
 	// Final safety: ensure ALL lines are truncated to width
 	// This catches any content that wasn't properly truncated
 	result := strings.Join(lines, "\n")
+	result = p.prependFlashHint(result)
 	return p.truncateAllLines(result, width)
+}
+
+// prependFlashHint adds an attach hint at the top of content when flash is active.
+func (p *Plugin) prependFlashHint(content string) string {
+	if time.Since(p.flashPreviewTime) < flashDuration {
+		hintStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color(styles.GetCurrentTheme().Colors.Warning)).
+			Bold(true)
+		hint := hintStyle.Render("Enter or double-click to attach")
+		return hint + "\n" + content
+	}
+	return content
 }
 
 // renderWelcomeGuide renders a helpful guide when no worktree is selected.
