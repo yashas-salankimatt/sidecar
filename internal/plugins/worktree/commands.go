@@ -52,6 +52,11 @@ func (p *Plugin) Commands() []plugin.Command {
 			{ID: "cancel", Name: "Cancel", Description: "Cancel merge", Context: "worktree-commit-for-merge", Priority: 1},
 			{ID: "commit", Name: "Commit", Description: "Commit and continue", Context: "worktree-commit-for-merge", Priority: 2},
 		}
+	case ViewModeRenameShell:
+		return []plugin.Command{
+			{ID: "cancel", Name: "Cancel", Description: "Cancel rename", Context: "worktree-rename-shell", Priority: 1},
+			{ID: "confirm", Name: "Rename", Description: "Confirm new name", Context: "worktree-rename-shell", Priority: 2},
+		}
 	default:
 		// View toggle label changes based on current mode
 		viewToggleName := "Kanban"
@@ -123,11 +128,13 @@ func (p *Plugin) Commands() []plugin.Command {
 			if shell == nil || shell.Agent == nil {
 				cmds = append(cmds,
 					plugin.Command{ID: "attach-shell", Name: "Attach", Description: "Create and attach to shell", Context: "worktree-list", Priority: 10},
+				plugin.Command{ID: "rename-shell", Name: "Rename", Description: "Rename shell", Context: "worktree-list", Priority: 11},
 				)
 			} else {
 				cmds = append(cmds,
 					plugin.Command{ID: "attach-shell", Name: "Attach", Description: "Attach to shell", Context: "worktree-list", Priority: 10},
 					plugin.Command{ID: "kill-shell", Name: "Kill", Description: "Kill shell session", Context: "worktree-list", Priority: 11},
+				plugin.Command{ID: "rename-shell", Name: "Rename", Description: "Rename shell", Context: "worktree-list", Priority: 12},
 				)
 			}
 			return cmds
@@ -194,6 +201,8 @@ func (p *Plugin) FocusContext() string {
 		return "worktree-commit-for-merge"
 	case ViewModePromptPicker:
 		return "worktree-prompt-picker"
+	case ViewModeRenameShell:
+		return "worktree-rename-shell"
 	default:
 		if p.activePane == PanePreview {
 			return "worktree-preview"

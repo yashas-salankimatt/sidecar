@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/marcus/sidecar/internal/state"
 )
 
 // Shell session constants
@@ -80,6 +81,13 @@ type (
 		Changed  bool
 	}
 
+	// RenameShellDoneMsg signals shell rename operation completed
+	RenameShellDoneMsg struct {
+		TmuxName string // Session name (stable identifier)
+		NewName  string // New display name
+		Err      error  // Non-nil if rename failed
+	}
+
 	// pollShellByNameMsg triggers a poll for a specific shell's output by name
 	pollShellByNameMsg struct {
 		TmuxName string
@@ -98,6 +106,27 @@ type pollShellMsg struct{}
 // Called from Init() to reconnect to sessions from previous runs.
 func (p *Plugin) initShellSessions() {
 	p.shells = p.discoverExistingShells()
+	p.restoreShellDisplayNames()
+}
+
+func (p *Plugin) restoreShellDisplayNames() {
+	if p.ctx == nil || len(p.shells) == 0 {
+		return
+	}
+
+	wtState := state.GetWorktreeState(p.ctx.WorkDir)
+	if len(wtState.ShellDisplayNames) == 0 {
+		return
+	}
+
+	for _, shell := range p.shells {
+		if shell == nil {
+			continue
+		}
+		if name, ok := wtState.ShellDisplayNames[shell.TmuxName]; ok && name != "" {
+			shell.Name = name
+		}
+	}
 }
 
 // discoverExistingShells finds all existing sidecar shell sessions for this project.
@@ -210,7 +239,7 @@ func (p *Plugin) createNewShell() tea.Cmd {
 			"new-session",
 			"-d",              // Detached
 			"-s", sessionName, // Session name
-			"-c", workDir,     // Working directory
+			"-c", workDir, // Working directory
 		}
 		cmd := exec.Command("tmux", args...)
 		if err := cmd.Run(); err != nil {
