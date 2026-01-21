@@ -709,8 +709,57 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			p.mergeState.CleanupResults.PullAttempted = true
 			p.mergeState.CleanupResults.PullSuccess = msg.Success
 			p.mergeState.CleanupResults.PullError = msg.Err
+
+			// Parse error for summary and divergence detection
+			if msg.Err != nil {
+				summary, full, diverged := summarizeGitError(msg.Err)
+				p.mergeState.CleanupResults.PullErrorSummary = summary
+				p.mergeState.CleanupResults.PullErrorFull = full
+				p.mergeState.CleanupResults.BranchDiverged = diverged
+				p.mergeState.CleanupResults.BaseBranch = msg.Branch
+				p.mergeState.CleanupResults.ShowErrorDetails = false
+			}
+
 			// Check if all cleanup tasks are done
 			p.checkCleanupComplete()
+		}
+
+	case RebaseResolutionMsg:
+		if p.mergeState != nil && p.mergeState.Worktree.Name == msg.WorktreeName {
+			if msg.Success {
+				// Rebase succeeded - update state
+				p.mergeState.CleanupResults.PullSuccess = true
+				p.mergeState.CleanupResults.PullError = nil
+				p.mergeState.CleanupResults.BranchDiverged = false
+				p.mergeState.CleanupResults.PullErrorSummary = ""
+				p.mergeState.CleanupResults.PullErrorFull = ""
+			} else {
+				// Rebase failed - update error state
+				p.mergeState.CleanupResults.PullError = msg.Err
+				summary, full, diverged := summarizeGitError(msg.Err)
+				p.mergeState.CleanupResults.PullErrorSummary = summary
+				p.mergeState.CleanupResults.PullErrorFull = full
+				p.mergeState.CleanupResults.BranchDiverged = diverged
+			}
+		}
+
+	case MergeResolutionMsg:
+		if p.mergeState != nil && p.mergeState.Worktree.Name == msg.WorktreeName {
+			if msg.Success {
+				// Merge succeeded - update state
+				p.mergeState.CleanupResults.PullSuccess = true
+				p.mergeState.CleanupResults.PullError = nil
+				p.mergeState.CleanupResults.BranchDiverged = false
+				p.mergeState.CleanupResults.PullErrorSummary = ""
+				p.mergeState.CleanupResults.PullErrorFull = ""
+			} else {
+				// Merge failed - update error state
+				p.mergeState.CleanupResults.PullError = msg.Err
+				summary, full, diverged := summarizeGitError(msg.Err)
+				p.mergeState.CleanupResults.PullErrorSummary = summary
+				p.mergeState.CleanupResults.PullErrorFull = full
+				p.mergeState.CleanupResults.BranchDiverged = diverged
+			}
 		}
 
 	case reconnectedAgentsMsg:

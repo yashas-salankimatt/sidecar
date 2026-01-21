@@ -1067,6 +1067,34 @@ func (p *Plugin) handleMergeKeys(msg tea.KeyMsg) tea.Cmd {
 		if p.mergeState.Step == MergeStepWaitingMerge && p.mergeState.PRURL != "" {
 			return openInBrowser(p.mergeState.PRURL)
 		}
+
+	case "d":
+		// Toggle error details in Done step
+		if p.mergeState.Step == MergeStepDone &&
+			p.mergeState.CleanupResults != nil &&
+			p.mergeState.CleanupResults.PullError != nil {
+			p.mergeState.CleanupResults.ShowErrorDetails = !p.mergeState.CleanupResults.ShowErrorDetails
+		}
+		return nil
+
+	case "r":
+		// Rebase action (only when branch diverged in Done step)
+		if p.mergeState.Step == MergeStepDone &&
+			p.mergeState.CleanupResults != nil &&
+			p.mergeState.CleanupResults.BranchDiverged {
+			return p.executeRebaseResolution()
+		}
+		return nil
+
+	case "m":
+		// Merge action (only when branch diverged in Done step)
+		// Note: 'm' in list view starts merge workflow, but here we're in MergeStepDone
+		if p.mergeState.Step == MergeStepDone &&
+			p.mergeState.CleanupResults != nil &&
+			p.mergeState.CleanupResults.BranchDiverged {
+			return p.executeMergeResolution()
+		}
+		return nil
 	}
 	return nil
 }

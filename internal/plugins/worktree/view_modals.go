@@ -1519,8 +1519,70 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 					sb.WriteString(successStyle.Render("  ✓ Pulled latest changes"))
 					sb.WriteString("\n")
 				} else if results.PullError != nil {
-					sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("  ⚠ Pull failed: " + results.PullError.Error()))
+					// Truncated error with toggle
+					warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+					errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+
+					sb.WriteString(warnStyle.Render("  ⚠ Pull failed: "))
+					sb.WriteString(errorStyle.Render(results.PullErrorSummary))
 					sb.WriteString("\n")
+
+					// Show full details if expanded
+					if results.ShowErrorDetails {
+						sb.WriteString("\n")
+						sb.WriteString(dimText("  Details:"))
+						sb.WriteString("\n")
+						// Wrap long lines and indent (cap at 10 lines)
+						allDetailLines := strings.Split(results.PullErrorFull, "\n")
+						maxDetailLines := 10
+						detailLines := allDetailLines
+						if len(allDetailLines) > maxDetailLines {
+							detailLines = allDetailLines[:maxDetailLines]
+						}
+						for _, line := range detailLines {
+							if line = strings.TrimSpace(line); line != "" {
+								sb.WriteString(dimText("    " + line))
+								sb.WriteString("\n")
+							}
+						}
+						if len(allDetailLines) > maxDetailLines {
+							sb.WriteString(dimText(fmt.Sprintf("    ... (%d more lines)",
+								len(allDetailLines)-maxDetailLines)))
+							sb.WriteString("\n")
+						}
+						sb.WriteString("\n")
+						sb.WriteString(dimText("  Press 'd' to hide details"))
+					} else {
+						sb.WriteString(dimText("  Press 'd' for full error details"))
+					}
+					sb.WriteString("\n")
+
+					// Resolution actions for diverged branches
+					if results.BranchDiverged {
+						sb.WriteString("\n")
+						sepLen := modalW - 4
+						if sepLen > 60 {
+							sepLen = 60
+						}
+						sb.WriteString(strings.Repeat("─", sepLen))
+						sb.WriteString("\n\n")
+						sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Resolution Options"))
+						sb.WriteString("\n")
+						sb.WriteString(dimText(fmt.Sprintf("  Your local '%s' has diverged from remote.", results.BaseBranch)))
+						sb.WriteString("\n\n")
+
+						// Rebase option
+						sb.WriteString(dimText("    [r] Rebase local onto remote"))
+						sb.WriteString("\n")
+						sb.WriteString(dimText("        Replay your local commits on top of remote changes"))
+						sb.WriteString("\n\n")
+
+						// Merge option
+						sb.WriteString(dimText("    [m] Merge remote into local"))
+						sb.WriteString("\n")
+						sb.WriteString(dimText("        Creates a merge commit combining both histories"))
+						sb.WriteString("\n")
+					}
 				}
 			}
 
@@ -1540,7 +1602,14 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 		}
 
 		sb.WriteString("\n\n")
-		sb.WriteString(dimText("Press Enter to close"))
+		// Context-aware footer hints
+		if p.mergeState.CleanupResults != nil && p.mergeState.CleanupResults.BranchDiverged {
+			sb.WriteString(dimText("r: rebase  m: merge  d: details  Enter: close"))
+		} else if p.mergeState.CleanupResults != nil && p.mergeState.CleanupResults.PullError != nil {
+			sb.WriteString(dimText("d: details  Enter: close"))
+		} else {
+			sb.WriteString(dimText("Press Enter to close"))
+		}
 	}
 
 	// Show error if any
