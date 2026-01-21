@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/marcus/sidecar/internal/features"
 	"github.com/marcus/sidecar/internal/styles"
 )
 
@@ -206,7 +207,12 @@ func (p *Plugin) renderOutputContent(width, height int) string {
 			Bold(true)
 		hint = interactiveStyle.Render("INTERACTIVE") + " " + dimText("Ctrl+\\ to exit • typing goes to tmux")
 	} else {
-		hint = dimText("enter to attach • i for interactive • Ctrl-b d to detach")
+		// Only show "i for interactive" hint if feature flag is enabled
+		if features.IsEnabled(features.TmuxInteractiveInput.Name) {
+			hint = dimText("enter to attach • i for interactive • Ctrl-b d to detach")
+		} else {
+			hint = dimText("enter to attach • Ctrl-b d to detach")
+		}
 	}
 	height-- // Reserve line for hint
 
@@ -308,7 +314,12 @@ func (p *Plugin) renderShellOutput(width, height int) string {
 			Bold(true)
 		hint = interactiveStyle.Render("INTERACTIVE") + " " + dimText("Ctrl+\\ to exit • typing goes to tmux")
 	} else {
-		hint = dimText("enter to attach • i for interactive • Ctrl-b d to detach")
+		// Only show "i for interactive" hint if feature flag is enabled
+		if features.IsEnabled(features.TmuxInteractiveInput.Name) {
+			hint = dimText("enter to attach • i for interactive • Ctrl-b d to detach")
+		} else {
+			hint = dimText("enter to attach • Ctrl-b d to detach")
+		}
 	}
 	height-- // Reserve line for hint
 

@@ -11,6 +11,7 @@ import (
 // Interactive mode constants
 const (
 	// doubleEscapeDelay is the max time between Escape presses for double-escape exit.
+	// Single Escape is delayed by this amount to detect double-press.
 	doubleEscapeDelay = 150 * time.Millisecond
 
 	// pollingDecayFast is the polling interval during active typing.
@@ -28,6 +29,10 @@ const (
 	// inactivitySlowThreshold triggers slow polling.
 	inactivitySlowThreshold = 10 * time.Second
 )
+
+// escapeTimerMsg is sent when the escape delay timer fires.
+// If pendingEscape is still true, we forward the single Escape to tmux.
+type escapeTimerMsg struct{}
 
 // MapKeyToTmux translates a Bubble Tea key message to a tmux send-keys argument.
 // Returns the tmux key name and whether to use literal mode (-l).
@@ -247,19 +252,32 @@ func (p *Plugin) handleInteractiveKeys(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	// Secondary exit: Double-Escape with 150ms delay
+	// Per spec: first Escape is delayed to detect double-press
 	if msg.Type == tea.KeyEscape {
-		now := time.Now()
-		if p.interactiveState.EscapePressed && now.Sub(p.interactiveState.EscapeTime) <= doubleEscapeDelay {
-			// Double-escape detected
+		if p.interactiveState.EscapePressed {
+			// Second Escape within window: exit interactive mode
+			p.interactiveState.EscapePressed = false
 			p.exitInteractiveMode()
 			return nil
 		}
-		// First escape - mark and forward to tmux (vim users need single Esc)
+		// First Escape: mark pending and start delay timer
+		// Do NOT forward to tmux yet - wait for timer or next key
 		p.interactiveState.EscapePressed = true
-		p.interactiveState.EscapeTime = now
-	} else {
-		// Non-escape key clears escape state
+		p.interactiveState.EscapeTime = time.Now()
+		return tea.Tick(doubleEscapeDelay, func(t time.Time) tea.Msg {
+			return escapeTimerMsg{}
+		})
+	}
+
+	// Non-escape key: check if we have a pending Escape to forward first
+	var cmds []tea.Cmd
+	if p.interactiveState.EscapePressed {
 		p.interactiveState.EscapePressed = false
+		// Forward the pending Escape before this key
+		if err := sendKeyToTmux(p.interactiveState.TargetSession, "Escape"); err != nil {
+			p.exitInteractiveMode()
+			return nil
+		}
 	}
 
 	// Update last key time for polling decay
@@ -268,7 +286,7 @@ func (p *Plugin) handleInteractiveKeys(msg tea.KeyMsg) tea.Cmd {
 	// Map key to tmux format and send
 	key, useLiteral := MapKeyToTmux(msg)
 	if key == "" {
-		return nil
+		return tea.Batch(cmds...)
 	}
 
 	sessionName := p.interactiveState.TargetSession
@@ -286,6 +304,31 @@ func (p *Plugin) handleInteractiveKeys(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	// Schedule fast poll to show updated output quickly
+	cmds = append(cmds, p.pollInteractivePane())
+	return tea.Batch(cmds...)
+}
+
+// handleEscapeTimer processes the escape delay timer firing.
+// If a single Escape is still pending (no second Escape arrived), forward it to tmux.
+func (p *Plugin) handleEscapeTimer() tea.Cmd {
+	if p.interactiveState == nil || !p.interactiveState.Active {
+		return nil
+	}
+
+	if !p.interactiveState.EscapePressed {
+		// Escape was already handled (double-press or another key arrived)
+		return nil
+	}
+
+	// Timer fired with pending Escape: forward the single Escape to tmux
+	p.interactiveState.EscapePressed = false
+	if err := sendKeyToTmux(p.interactiveState.TargetSession, "Escape"); err != nil {
+		p.exitInteractiveMode()
+		return nil
+	}
+
+	// Update last key time and poll
+	p.interactiveState.LastKeyTime = time.Now()
 	return p.pollInteractivePane()
 }
 
