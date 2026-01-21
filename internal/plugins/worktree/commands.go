@@ -52,6 +52,11 @@ func (p *Plugin) Commands() []plugin.Command {
 			{ID: "cancel", Name: "Cancel", Description: "Cancel merge", Context: "worktree-commit-for-merge", Priority: 1},
 			{ID: "commit", Name: "Commit", Description: "Commit and continue", Context: "worktree-commit-for-merge", Priority: 2},
 		}
+	case ViewModeRenameShell:
+		return []plugin.Command{
+			{ID: "cancel", Name: "Cancel", Description: "Cancel rename", Context: "worktree-rename-shell", Priority: 1},
+			{ID: "confirm", Name: "Rename", Description: "Confirm new name", Context: "worktree-rename-shell", Priority: 2},
+		}
 	default:
 		// View toggle label changes based on current mode
 		viewToggleName := "Kanban"
@@ -196,6 +201,8 @@ func (p *Plugin) FocusContext() string {
 		return "worktree-commit-for-merge"
 	case ViewModePromptPicker:
 		return "worktree-prompt-picker"
+	case ViewModeRenameShell:
+		return "worktree-rename-shell"
 	default:
 		if p.activePane == PanePreview {
 			return "worktree-preview"
