@@ -49,6 +49,10 @@ type ColorPalette struct {
 	GradientBorderNormal []string `json:"gradientBorderNormal"` // Colors for inactive panel gradient
 	GradientBorderAngle  float64  `json:"gradientBorderAngle"`  // Angle in degrees (default: 30)
 
+	// Tab theme configuration
+	TabStyle  string   `json:"tabStyle"`  // "gradient", "per-tab", "solid", "minimal", or preset name
+	TabColors []string `json:"tabColors"` // Color stops for gradient OR per-tab colors
+
 	// Diff colors
 	DiffAddFg    string `json:"diffAddFg"`
 	DiffAddBg    string `json:"diffAddBg"`
@@ -115,6 +119,10 @@ var (
 			GradientBorderNormal: []string{"#374151", "#2D3748"},
 			GradientBorderAngle:  30.0,
 
+			// Tab theme (rainbow gradient across all tabs)
+			TabStyle:  "rainbow",
+			TabColors: []string{"#DC3C3C", "#3CDC3C", "#3C3CDC", "#9C3CDC"},
+
 			// Diff colors
 			DiffAddFg:    "#10B981",
 			DiffAddBg:    "#0D2818",
@@ -172,6 +180,10 @@ var (
 			GradientBorderActive: []string{"#BD93F9", "#8BE9FD"},
 			GradientBorderNormal: []string{"#44475A", "#383A4A"},
 			GradientBorderAngle:  30.0,
+
+			// Tab theme (Dracula purple-pink-cyan gradient)
+			TabStyle:  "gradient",
+			TabColors: []string{"#BD93F9", "#FF79C6", "#8BE9FD"},
 
 			// Diff colors
 			DiffAddFg:    "#50FA7B",
@@ -336,8 +348,8 @@ func applyGenericOverrides(palette *ColorPalette, overrides map[string]interface
 // applySingleOverride applies a single string override.
 // Color values must be valid hex colors (#RRGGBB). Invalid colors are silently ignored.
 func applySingleOverride(palette *ColorPalette, key, value string) {
-	// syntaxTheme and markdownTheme are theme names, not colors
-	isThemeName := key == "syntaxTheme" || key == "markdownTheme"
+	// syntaxTheme, markdownTheme, and tabStyle are names, not colors
+	isThemeName := key == "syntaxTheme" || key == "markdownTheme" || key == "tabStyle"
 	if !isThemeName && !IsValidHexColor(value) {
 		return // Skip invalid hex color
 	}
@@ -403,6 +415,8 @@ func applySingleOverride(palette *ColorPalette, key, value string) {
 		palette.SyntaxTheme = value
 	case "markdownTheme":
 		palette.MarkdownTheme = value
+	case "tabStyle":
+		palette.TabStyle = value
 	}
 }
 
@@ -421,6 +435,8 @@ func applyArrayOverride(palette *ColorPalette, key string, colors []string) {
 		palette.GradientBorderActive = colors
 	case "gradientBorderNormal":
 		palette.GradientBorderNormal = colors
+	case "tabColors":
+		palette.TabColors = colors
 	}
 }
 
@@ -479,6 +495,10 @@ func ApplyThemeColors(theme Theme) {
 	// Store syntax/markdown theme names for external use
 	CurrentSyntaxTheme = c.SyntaxTheme
 	CurrentMarkdownTheme = c.MarkdownTheme
+
+	// Update tab theme state
+	CurrentTabStyle = c.TabStyle
+	CurrentTabColors = parseTabColors(c.TabColors)
 
 	// Rebuild all styles that depend on these colors
 	rebuildStyles()

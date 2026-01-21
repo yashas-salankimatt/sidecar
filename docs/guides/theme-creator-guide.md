@@ -74,6 +74,72 @@ Panel borders support angled gradients (default 30°) that flow diagonally from 
 
 Gradients support 2 or more color stops. If gradient colors are not specified, the solid `borderActive`/`borderNormal` colors are used as fallback.
 
+### Tab Theme Colors
+
+Tabs in the header bar support multiple color schemes. Configure with `tabStyle` and `tabColors`:
+
+| Key | Description | Default | Dracula |
+|-----|-------------|---------|---------|
+| `tabStyle` | Tab rendering style or preset name | `rainbow` | `gradient` |
+| `tabColors` | Array of hex colors for gradient/per-tab | `["#DC3C3C", "#3CDC3C", "#3C3CDC", "#9C3CDC"]` | `["#BD93F9", "#FF79C6", "#8BE9FD"]` |
+
+**Tab Styles:**
+- `gradient` - Colors flow continuously across all tabs (per-character interpolation)
+- `per-tab` - Each tab gets a distinct solid color from the array (cycles)
+- `solid` - Uses theme primary/tertiary colors
+- `minimal` - No background, active tab uses underline
+
+**Built-in Presets** (use as `tabStyle` value):
+
+| Preset | Style | Colors |
+|--------|-------|--------|
+| `rainbow` | gradient | Red → Green → Blue → Purple |
+| `sunset` | gradient | Orange → Peach → Pink |
+| `ocean` | gradient | Deep Blue → Cyan → Light Blue |
+| `aurora` | gradient | Purple → Dark Purple → Teal |
+| `neon` | gradient | Magenta → Cyan → Green |
+| `fire` | gradient | Red-Orange → Orange → Gold |
+| `forest` | gradient | Dark Green → Mid Green → Light Green |
+| `candy` | gradient | Pink → Purple → Turquoise |
+| `pastel` | per-tab | Pink, Green, Blue, Yellow |
+| `jewel` | per-tab | Ruby, Sapphire, Amethyst, Topaz |
+| `terminal` | per-tab | Red, Green, Cyan, Yellow |
+| `mono` | solid | Theme primary color |
+| `accent` | solid | Theme accent color |
+| `underline` | minimal | No background, underlined active |
+| `dim` | minimal | No background, dim inactive |
+
+**Examples:**
+
+```yaml
+# Use a preset
+ui:
+  theme:
+    overrides:
+      tabStyle: "sunset"
+
+# Custom gradient
+ui:
+  theme:
+    overrides:
+      tabStyle: "gradient"
+      tabColors:
+        - "#FF6B35"
+        - "#F7C59F"
+        - "#FF006E"
+
+# Per-tab distinct colors
+ui:
+  theme:
+    overrides:
+      tabStyle: "per-tab"
+      tabColors:
+        - "#FF5555"
+        - "#50FA7B"
+        - "#8BE9FD"
+        - "#F1FA8C"
+```
+
 ### Diff Colors
 | Key | Description | Default | Dracula |
 |-----|-------------|---------|---------|

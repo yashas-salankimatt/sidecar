@@ -49,6 +49,12 @@ var (
 	CurrentMarkdownTheme = "dark"
 )
 
+// Tab theme state (updated by ApplyTheme)
+var (
+	CurrentTabStyle  = "rainbow"
+	CurrentTabColors = []RGB{{220, 60, 60}, {60, 220, 60}, {60, 60, 220}, {156, 60, 220}} // Default rainbow
+)
+
 // Panel styles
 var (
 	// Active panel with highlighted border
@@ -191,16 +197,6 @@ var (
 			Padding(0, 1).
 			Bold(true)
 )
-
-// Tab rainbow colors (left to right: red → green → blue → purple)
-var TabRainbowColors = []struct {
-	R, G, B uint8
-}{
-	{220, 60, 60},  // Red
-	{60, 180, 80},  // Green
-	{60, 130, 220}, // Blue
-	{140, 80, 200}, // Purple
-}
 
 // TabTextActive is the text color for active tabs
 var TabTextActive = lipgloss.NewStyle().
@@ -360,15 +356,48 @@ var (
 				Padding(0, 2)
 )
 
-// RenderGradientTab renders a tab label with a gradient background.
+// RenderTab renders a tab label using the current tab theme.
 // tabIndex is the 0-based index of this tab, totalTabs is the total count.
-// The gradient flows across all tabs: red → green → blue → purple.
+func RenderTab(label string, tabIndex, totalTabs int, isActive bool) string {
+	style := CurrentTabStyle
+	colors := CurrentTabColors
+
+	// Check if style is a preset name
+	if preset := GetTabPreset(style); preset != nil {
+		style = preset.Style
+		if len(preset.Colors) > 0 {
+			colors = parseTabColors(preset.Colors)
+		}
+	}
+
+	switch style {
+	case "gradient":
+		return renderGradientTab(label, tabIndex, totalTabs, isActive, colors)
+	case "per-tab":
+		return renderPerTabColor(label, tabIndex, isActive, colors)
+	case "solid":
+		return renderSolidTab(label, isActive)
+	case "minimal":
+		return renderMinimalTab(label, isActive)
+	default:
+		// Default to gradient
+		return renderGradientTab(label, tabIndex, totalTabs, isActive, colors)
+	}
+}
+
+// RenderGradientTab renders a tab label with a gradient background.
+// Kept for backwards compatibility - delegates to RenderTab.
 func RenderGradientTab(label string, tabIndex, totalTabs int, isActive bool) string {
+	return renderGradientTab(label, tabIndex, totalTabs, isActive, CurrentTabColors)
+}
+
+// renderGradientTab renders a tab with per-character gradient coloring.
+func renderGradientTab(label string, tabIndex, totalTabs int, isActive bool, colors []RGB) string {
 	if totalTabs == 0 {
 		totalTabs = 1
 	}
 
-	// Calculate position in the rainbow (0.0 to 1.0 across all tabs)
+	// Calculate position in the gradient (0.0 to 1.0 across all tabs)
 	tabWidth := 1.0 / float64(totalTabs)
 	startPos := float64(tabIndex) * tabWidth
 	endPos := startPos + tabWidth
@@ -379,11 +408,11 @@ func RenderGradientTab(label string, tabIndex, totalTabs int, isActive bool) str
 	result := ""
 
 	for i, ch := range chars {
-		// Position within the rainbow for this character
+		// Position within the gradient for this character
 		charPos := startPos + (endPos-startPos)*float64(i)/float64(len(chars))
 
 		// Get interpolated color
-		r, g, b := interpolateRainbow(charPos)
+		r, g, b := interpolateColors(charPos, colors)
 
 		// Mute colors for inactive tabs
 		if !isActive {
@@ -406,10 +435,70 @@ func RenderGradientTab(label string, tabIndex, totalTabs int, isActive bool) str
 	return result
 }
 
-// interpolateRainbow returns RGB for a position 0.0-1.0 across the rainbow
-func interpolateRainbow(pos float64) (uint8, uint8, uint8) {
-	colors := TabRainbowColors
+// renderPerTabColor renders a tab with a single solid color from the colors array.
+func renderPerTabColor(label string, tabIndex int, isActive bool, colors []RGB) string {
+	if len(colors) == 0 {
+		return renderSolidTab(label, isActive)
+	}
+
+	// Get color for this tab (cycle through available colors)
+	color := colors[tabIndex%len(colors)]
+	r, g, b := uint8(color.R), uint8(color.G), uint8(color.B)
+
+	// Mute colors for inactive tabs
+	if !isActive {
+		r = uint8(float64(r)*0.35 + 30)
+		g = uint8(float64(g)*0.35 + 30)
+		b = uint8(float64(b)*0.35 + 30)
+	}
+
+	bg := lipgloss.Color(sprintf("#%02x%02x%02x", r, g, b))
+	padded := "  " + label + "  "
+
+	var style lipgloss.Style
+	if isActive {
+		style = lipgloss.NewStyle().Background(bg).Foreground(TextPrimary).Bold(true)
+	} else {
+		style = lipgloss.NewStyle().Background(bg).Foreground(TextSecondary)
+	}
+
+	return style.Render(padded)
+}
+
+// renderSolidTab renders a tab with the theme's primary/tertiary colors.
+func renderSolidTab(label string, isActive bool) string {
+	padded := "  " + label + "  "
+
+	var style lipgloss.Style
+	if isActive {
+		style = lipgloss.NewStyle().Background(Primary).Foreground(TextPrimary).Bold(true)
+	} else {
+		style = lipgloss.NewStyle().Background(BgTertiary).Foreground(TextSecondary)
+	}
+
+	return style.Render(padded)
+}
+
+// renderMinimalTab renders a tab with no background, using underline for active.
+func renderMinimalTab(label string, isActive bool) string {
+	padded := "  " + label + "  "
+
+	var style lipgloss.Style
+	if isActive {
+		style = lipgloss.NewStyle().Foreground(Primary).Bold(true).Underline(true)
+	} else {
+		style = lipgloss.NewStyle().Foreground(TextMuted)
+	}
+
+	return style.Render(padded)
+}
+
+// interpolateColors returns RGB for a position 0.0-1.0 across the color array
+func interpolateColors(pos float64, colors []RGB) (uint8, uint8, uint8) {
 	if len(colors) < 2 {
+		if len(colors) == 1 {
+			return uint8(colors[0].R), uint8(colors[0].G), uint8(colors[0].B)
+		}
 		return 128, 128, 128
 	}
 
@@ -423,9 +512,9 @@ func interpolateRainbow(pos float64) (uint8, uint8, uint8) {
 
 	// Interpolate between adjacent colors
 	c1, c2 := colors[idx], colors[idx+1]
-	r := uint8(float64(c1.R) + frac*(float64(c2.R)-float64(c1.R)))
-	g := uint8(float64(c1.G) + frac*(float64(c2.G)-float64(c1.G)))
-	b := uint8(float64(c1.B) + frac*(float64(c2.B)-float64(c1.B)))
+	r := uint8(c1.R + frac*(c2.R-c1.R))
+	g := uint8(c1.G + frac*(c2.G-c1.G))
+	b := uint8(c1.B + frac*(c2.B-c1.B))
 
 	return r, g, b
 }
@@ -443,4 +532,18 @@ func sprintf(format string, a ...interface{}) string {
 		})
 	}
 	return ""
+}
+
+// parseTabColors converts hex color strings to RGB values for tab rendering
+func parseTabColors(hexColors []string) []RGB {
+	if len(hexColors) == 0 {
+		// Return default rainbow colors
+		return []RGB{{220, 60, 60}, {60, 220, 60}, {60, 60, 220}, {156, 60, 220}}
+	}
+
+	colors := make([]RGB, len(hexColors))
+	for i, hex := range hexColors {
+		colors[i] = HexToRGB(hex)
+	}
+	return colors
 }
