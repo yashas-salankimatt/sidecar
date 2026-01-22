@@ -98,6 +98,39 @@ func getDiffFromBase(workdir, baseBranch string) (string, error) {
 	return string(output), nil
 }
 
+// getDiffStatFromBase returns the --stat output compared to the base branch.
+func getDiffStatFromBase(workdir, baseBranch string) (string, error) {
+	if baseBranch == "" {
+		baseBranch = detectDefaultBranch(workdir)
+	}
+
+	// Try to find merge-base first
+	mbCmd := exec.Command("git", "merge-base", baseBranch, "HEAD")
+	mbCmd.Dir = workdir
+	mbOutput, err := mbCmd.Output()
+
+	var args []string
+	if err == nil {
+		mbHash := strings.TrimSpace(string(mbOutput))
+		if len(mbHash) >= 40 {
+			args = []string{"diff", "--stat", mbHash[:40] + "..HEAD"}
+		} else {
+			args = []string{"diff", "--stat", baseBranch + "..HEAD"}
+		}
+	} else {
+		args = []string{"diff", "--stat", baseBranch + "..HEAD"}
+	}
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = workdir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
 // getDiffSummary returns a brief summary of changes.
 func getDiffSummary(workdir string) (string, error) {
 	cmd := exec.Command("git", "diff", "--stat", "HEAD")

@@ -1259,7 +1259,7 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 	// Step-specific content
 	switch p.mergeState.Step {
 	case MergeStepReviewDiff:
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Diff Summary:"))
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Files Changed:"))
 		sb.WriteString("\n\n")
 		if p.mergeState.DiffSummary != "" {
 			// Truncate to fit modal
@@ -1270,14 +1270,14 @@ func (p *Plugin) renderMergeModal(width, height int) string {
 			}
 			if len(summaryLines) > maxLines {
 				summaryLines = summaryLines[:maxLines]
-				summaryLines = append(summaryLines, fmt.Sprintf("... (%d more lines)", len(strings.Split(p.mergeState.DiffSummary, "\n"))-maxLines))
+				summaryLines = append(summaryLines, fmt.Sprintf("... (%d more files)", len(strings.Split(p.mergeState.DiffSummary, "\n"))-maxLines))
 			}
 			for _, line := range summaryLines {
-				sb.WriteString(p.colorDiffLine(line, modalW-4))
+				sb.WriteString(p.colorStatLine(line, modalW-4))
 				sb.WriteString("\n")
 			}
 		} else {
-			sb.WriteString(dimText("Loading diff..."))
+			sb.WriteString(dimText("Loading..."))
 			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")

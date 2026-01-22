@@ -268,13 +268,12 @@ func (p *Plugin) proceedToMergeWorkflow(wt *Worktree) tea.Cmd {
 	return p.loadMergeDiff(wt)
 }
 
-// loadMergeDiff loads the diff summary for the merge workflow.
+// loadMergeDiff loads the diff file summary for the merge workflow.
 func (p *Plugin) loadMergeDiff(wt *Worktree) tea.Cmd {
 	return func() tea.Msg {
-		// Get diff against base branch
 		baseBranch := resolveBaseBranch(wt)
 
-		diff, err := getDiffFromBase(wt.Path, baseBranch)
+		stat, err := getDiffStatFromBase(wt.Path, baseBranch)
 		if err != nil {
 			return MergeStepCompleteMsg{
 				WorktreeName: wt.Name,
@@ -284,13 +283,10 @@ func (p *Plugin) loadMergeDiff(wt *Worktree) tea.Cmd {
 			}
 		}
 
-		// Get a summary (stat output)
-		summary, _ := getDiffSummary(wt.Path)
-
 		return MergeStepCompleteMsg{
 			WorktreeName: wt.Name,
 			Step:         MergeStepReviewDiff,
-			Data:         summary + "\n\n" + truncateDiff(diff, 50),
+			Data:         stat,
 		}
 	}
 }

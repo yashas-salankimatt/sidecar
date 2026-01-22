@@ -269,3 +269,41 @@ func (p *Plugin) colorDiffLine(line string, width int) string {
 		return line
 	}
 }
+
+// colorStatLine applies coloring to git --stat output lines.
+// Colors the +/- bar graph characters green/red.
+func (p *Plugin) colorStatLine(line string, width int) string {
+	if len(line) == 0 {
+		return line
+	}
+
+	// Truncate if needed
+	if lipgloss.Width(line) > width {
+		line = p.truncateCache.Truncate(line, width, "")
+	}
+
+	// Find the | separator that precedes the bar graph
+	pipeIdx := strings.LastIndex(line, "|")
+	if pipeIdx == -1 {
+		// Summary line or no bar graph - render as-is
+		return line
+	}
+
+	prefix := line[:pipeIdx+1]
+	bar := line[pipeIdx+1:]
+
+	// Color individual + and - characters in the bar portion
+	var colored strings.Builder
+	colored.WriteString(prefix)
+	for _, ch := range bar {
+		switch ch {
+		case '+':
+			colored.WriteString(styles.DiffAdd.Render("+"))
+		case '-':
+			colored.WriteString(styles.DiffRemove.Render("-"))
+		default:
+			colored.WriteRune(ch)
+		}
+	}
+	return colored.String()
+}
