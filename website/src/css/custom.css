@@ -1592,14 +1592,13 @@ a:hover {
   flex-direction: column !important;
 }
 
-/* Ensure the primary items container shows all items */
-.navbar-sidebar__items--show-secondary {
-  display: none;
+/* Toggle between primary and secondary menus on docs pages */
+.navbar-sidebar__item[inert] {
+  display: none !important;
 }
 
-.navbar-sidebar__items:not(.navbar-sidebar__items--show-secondary) {
-  display: flex;
-  flex-direction: column;
+.navbar-sidebar__item:not([inert]) {
+  display: flex !important;
 }
 
 .navbar-sidebar__item {
