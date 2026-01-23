@@ -383,6 +383,12 @@ func (p *Plugin) handleMouseClick(action mouse.MouseAction) tea.Cmd {
 				p.syncListToKanban()
 			}
 		}
+	case regionCreateBackdrop:
+		// Click outside create modal - close it
+		p.viewMode = ViewModeList
+		p.clearCreateModal()
+	case regionCreateModalBody:
+		// Click inside modal but not on a form element - absorb
 	case regionCreateInput:
 		// Click on input field in create modal
 		if focusIdx, ok := action.Region.Data.(int); ok {

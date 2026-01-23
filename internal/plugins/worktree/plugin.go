@@ -55,6 +55,8 @@ const (
 	regionViewToggle   = "view-toggle"
 
 	// Create modal regions
+	regionCreateBackdrop    = "create-backdrop"
+	regionCreateModalBody   = "create-modal-body"
 	regionCreateInput       = "create-input"
 	regionCreateDropdown    = "create-dropdown"
 	regionCreateButton      = "create-button"

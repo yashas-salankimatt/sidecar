@@ -356,6 +356,10 @@ func (p *Plugin) renderCreateModal(width, height int) string {
 	modalX := (width - modalW) / 2
 	modalY := (height - modalH) / 2
 
+	// Register backdrop (closes modal on outside click) then modal body (absorbs inside clicks)
+	p.mouseHandler.HitMap.AddRect(regionCreateBackdrop, 0, 0, width, height, nil)
+	p.mouseHandler.HitMap.AddRect(regionCreateModalBody, modalX, modalY, modalW, modalH, nil)
+
 	// Register hit regions for interactive elements
 	// modalStyle has border(1) + padding(1) = 2 rows before content starts
 	// Track Y position through modal content structure
