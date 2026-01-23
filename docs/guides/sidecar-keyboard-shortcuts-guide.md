@@ -290,6 +290,31 @@ All plugins with two-pane layouts (Git, Conversations, Files) share consistent s
 | `git-history` | History view | Commit history |
 | `git-commit-detail` | Commit detail | Single commit view |
 
+#### Git Status File List Shortcuts
+| Key | Command | Description |
+|-----|---------|-------------|
+| `s` | stage-file | Stage selected file |
+| `u` | unstage-file | Unstage selected file |
+| `S` | stage-all | Stage all modified files |
+| `U` | unstage-all | Unstage all files |
+| `c` | commit | Open commit editor (requires staged files) |
+| `A` | amend | Amend last commit (no staged files required) |
+| `d`/`enter` | show-diff | View file changes |
+| `D` | discard-changes | Discard unstaged changes |
+| `h` | show-history | Open commit history |
+| `P` | push | Open push menu |
+| `L` | pull | Open pull menu |
+| `f` | fetch | Fetch from remote |
+| `b` | branch | Branch operations |
+| `z` | stash | Stash changes |
+| `Z` | stash-pop | Pop stash |
+| `o` | open-in-github | Open file in GitHub |
+| `O` | open-in-file-browser | Open in file browser |
+| `y` | yank-file | Copy file info |
+| `Y` | yank-path | Copy file path |
+| `r` | refresh | Refresh status |
+| `\` | toggle-sidebar | Collapse/expand sidebar |
+
 #### Git Status Commit List Shortcuts
 | Key | Command | Description |
 |-----|---------|-------------|

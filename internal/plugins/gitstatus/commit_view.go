@@ -68,12 +68,15 @@ func (p *Plugin) renderCommit() string {
 	fileCount := len(p.tree.Staged)
 
 	// Header with stats
-	statsStr := fmt.Sprintf("[%d: +%d -%d]", fileCount, additions, deletions)
 	titleText := " Commit "
 	if p.commitAmend {
 		titleText = " Amend "
 	}
 	title := styles.Title.Render(titleText)
+	statsStr := ""
+	if fileCount > 0 {
+		statsStr = fmt.Sprintf("[%d: +%d -%d]", fileCount, additions, deletions)
+	}
 	statsRendered := styles.Muted.Render(statsStr)
 	padding := contentWidth - lipgloss.Width(title) - lipgloss.Width(statsStr)
 	if padding < 1 {
@@ -85,47 +88,56 @@ func (p *Plugin) renderCommit() string {
 	sb.WriteString("\n")
 
 	// Staged files section - show more files based on available height
-	sb.WriteString(styles.StatusStaged.Render(fmt.Sprintf("Staged (%d)", fileCount)))
-	sb.WriteString("\n")
-
-	// Dynamic maxFiles: allow up to 8, fewer on small terminals
-	maxFiles := 8
-	if p.height < 30 {
-		maxFiles = 6
-	}
-	if p.height < 24 {
-		maxFiles = 4
-	}
-	for i, entry := range p.tree.Staged {
-		if i >= maxFiles {
-			remaining := len(p.tree.Staged) - maxFiles
-			sb.WriteString(styles.Muted.Render(fmt.Sprintf("  ... +%d more", remaining)))
-			sb.WriteString("\n")
-			break
+	if p.commitAmend && fileCount == 0 {
+		sb.WriteString(styles.Muted.Render("Message-only amend (no staged changes)"))
+		sb.WriteString("\n")
+	} else {
+		if p.commitAmend {
+			sb.WriteString(styles.StatusStaged.Render(fmt.Sprintf("Staged (%d) — will be added to amended commit", fileCount)))
+		} else {
+			sb.WriteString(styles.StatusStaged.Render(fmt.Sprintf("Staged (%d)", fileCount)))
 		}
+		sb.WriteString("\n")
 
-		// Status indicator
-		status := styles.StatusStaged.Render(string(entry.Status))
-
-		// Path - truncate for modal width
-		path := entry.Path
-		maxPathWidth := contentWidth - 18
-		if maxPathWidth < 10 {
-			maxPathWidth = 10
+		// Dynamic maxFiles: allow up to 8, fewer on small terminals
+		maxFiles := 8
+		if p.height < 30 {
+			maxFiles = 6
 		}
-		if len(path) > maxPathWidth {
-			path = "..." + path[len(path)-maxPathWidth+3:]
+		if p.height < 24 {
+			maxFiles = 4
 		}
+		for i, entry := range p.tree.Staged {
+			if i >= maxFiles {
+				remaining := len(p.tree.Staged) - maxFiles
+				sb.WriteString(styles.Muted.Render(fmt.Sprintf("  ... +%d more", remaining)))
+				sb.WriteString("\n")
+				break
+			}
 
-		// Diff stats
-		stats := ""
-		if entry.DiffStats.Additions > 0 || entry.DiffStats.Deletions > 0 {
-			addStr := styles.DiffAdd.Render(fmt.Sprintf("+%d", entry.DiffStats.Additions))
-			delStr := styles.DiffRemove.Render(fmt.Sprintf("-%d", entry.DiffStats.Deletions))
-			stats = fmt.Sprintf(" %s %s", addStr, delStr)
+			// Status indicator
+			status := styles.StatusStaged.Render(string(entry.Status))
+
+			// Path - truncate for modal width
+			path := entry.Path
+			maxPathWidth := contentWidth - 18
+			if maxPathWidth < 10 {
+				maxPathWidth = 10
+			}
+			if len(path) > maxPathWidth {
+				path = "..." + path[len(path)-maxPathWidth+3:]
+			}
+
+			// Diff stats
+			stats := ""
+			if entry.DiffStats.Additions > 0 || entry.DiffStats.Deletions > 0 {
+				addStr := styles.DiffAdd.Render(fmt.Sprintf("+%d", entry.DiffStats.Additions))
+				delStr := styles.DiffRemove.Render(fmt.Sprintf("-%d", entry.DiffStats.Deletions))
+				stats = fmt.Sprintf(" %s %s", addStr, delStr)
+			}
+
+			sb.WriteString(fmt.Sprintf("  %s %s%s\n", status, path, stats))
 		}
-
-		sb.WriteString(fmt.Sprintf("  %s %s%s\n", status, path, stats))
 	}
 
 	sb.WriteString("\n")

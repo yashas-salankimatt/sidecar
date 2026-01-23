@@ -455,6 +455,20 @@ func (t *FileTree) StagedStats() (additions, deletions int) {
 	return
 }
 
+// parseCommitHash extracts the commit hash from git commit output.
+// Format: "[branch hash] message"
+func parseCommitHash(output string) string {
+	lines := strings.Split(output, "\n")
+	if len(lines) > 0 {
+		re := regexp.MustCompile(`\[[\w/-]+ ([a-f0-9]+)\]`)
+		matches := re.FindStringSubmatch(lines[0])
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	}
+	return ""
+}
+
 // ExecuteCommit executes a git commit with the given message.
 // Returns the commit hash on success or an error with git output on failure.
 func ExecuteCommit(workDir, message string) (string, error) {
@@ -464,18 +478,7 @@ func ExecuteCommit(workDir, message string) (string, error) {
 	if err != nil {
 		return "", &CommitError{Output: string(output), Err: err}
 	}
-
-	// Parse output for commit hash (format: '[branch hash] message')
-	lines := strings.Split(string(output), "\n")
-	if len(lines) > 0 {
-		// Extract hash from "[branch hash] message"
-		re := regexp.MustCompile(`\[[\w/-]+ ([a-f0-9]+)\]`)
-		matches := re.FindStringSubmatch(lines[0])
-		if len(matches) > 1 {
-			return matches[1], nil
-		}
-	}
-	return "", nil
+	return parseCommitHash(string(output)), nil
 }
 
 // ExecuteAmend executes a git commit --amend with the given message.
@@ -486,17 +489,7 @@ func ExecuteAmend(workDir, message string) (string, error) {
 	if err != nil {
 		return "", &CommitError{Output: string(output), Err: err}
 	}
-
-	// Parse output for commit hash (same format as regular commit)
-	lines := strings.Split(string(output), "\n")
-	if len(lines) > 0 {
-		re := regexp.MustCompile(`\[[\w/-]+ ([a-f0-9]+)\]`)
-		matches := re.FindStringSubmatch(lines[0])
-		if len(matches) > 1 {
-			return matches[1], nil
-		}
-	}
-	return "", nil
+	return parseCommitHash(string(output)), nil
 }
 
 // getLastCommitMessage returns the message of the most recent commit.
