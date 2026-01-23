@@ -13,6 +13,11 @@ import (
 var mouseEscapeRegex = regexp.MustCompile(`\x1b\[<\d+;\d+;\d+[Mm]`)
 var terminalModeRegex = regexp.MustCompile(`\x1b\[\?(?:1000|1002|1003|1005|1006|1015|2004)[hl]`)
 
+// partialMouseEscapeRegex matches SGR mouse sequences that lost their ESC prefix (td-791865).
+// This happens when the ESC byte is consumed by readline/ZLE but the rest of the sequence
+// is printed as literal text in the terminal. Defense-in-depth for the input-side filter.
+var partialMouseEscapeRegex = regexp.MustCompile(`\[<\d+;\d+;\d+[Mm]`)
+
 // ViewMode represents the current view state.
 type ViewMode int
 
@@ -347,6 +352,10 @@ func (b *OutputBuffer) Update(content string) bool {
 	if strings.Contains(content, "\x1b[?") {
 		content = terminalModeRegex.ReplaceAllString(content, "")
 	}
+	// Strip partial mouse sequences (ESC consumed by shell, rest printed as text) (td-791865)
+	if strings.Contains(content, "[<") {
+		content = partialMouseEscapeRegex.ReplaceAllString(content, "")
+	}
 
 	// Store cleaned content hash for future comparisons
 	cleanHash := maphash.String(b.hashSeed, content)
@@ -379,6 +388,10 @@ func (b *OutputBuffer) Write(content string) {
 	}
 	if strings.Contains(content, "\x1b[?") {
 		content = terminalModeRegex.ReplaceAllString(content, "")
+	}
+	// Strip partial mouse sequences (ESC consumed by shell, rest printed as text) (td-791865)
+	if strings.Contains(content, "[<") {
+		content = partialMouseEscapeRegex.ReplaceAllString(content, "")
 	}
 
 	// Replace instead of append to avoid duplication

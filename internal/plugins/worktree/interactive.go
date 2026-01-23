@@ -3,6 +3,7 @@ package worktree
 import (
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,13 @@ const (
 	// defaultAttachKey is the default keybinding to attach from interactive mode (td-fd68d1).
 	defaultAttachKey = "ctrl+]"
 )
+
+// partialMouseSeqRegex matches SGR mouse sequences that lost their ESC prefix
+// due to split-read timing in terminal input. When the ESC byte arrives in a
+// separate read from the rest of the sequence, Bubble Tea generates a KeyEscape
+// followed by KeyRunes containing "[<button;x;yM/m". These should be dropped
+// rather than forwarded to tmux where they'd appear as literal text (td-791865).
+var partialMouseSeqRegex = regexp.MustCompile(`^\[<\d+;\d+;\d+[Mm]$`)
 
 // escapeTimerMsg is sent when the escape delay timer fires.
 // If pendingEscape is still true, we forward the single Escape to tmux.
@@ -760,6 +768,15 @@ func (p *Plugin) handleInteractiveKeys(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	sessionName := p.interactiveState.TargetSession
+
+	// Filter partial SGR mouse sequences that leaked through Bubble Tea's
+	// input parser due to split-read timing (ESC arrived separately) (td-791865).
+	// Must be checked before isPasteInput since these exceed the paste length threshold.
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 5 {
+		if partialMouseSeqRegex.MatchString(string(msg.Runes)) {
+			return tea.Batch(cmds...)
+		}
+	}
 
 	// Check for paste (multi-character input with newlines or long text)
 	if isPasteInput(msg) {

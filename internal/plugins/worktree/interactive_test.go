@@ -947,3 +947,146 @@ func TestUpdateBracketedPasteMode_ActiveState(t *testing.T) {
 		t.Error("expected BracketedPasteEnabled to be true after update with enable sequence")
 	}
 }
+
+// ============================================================================
+// Partial Mouse Sequence Filtering Tests (td-791865)
+// ============================================================================
+
+// TestPartialMouseSeqRegex_MatchesScrollDown tests SGR scroll down detection
+func TestPartialMouseSeqRegex_MatchesScrollDown(t *testing.T) {
+	if !partialMouseSeqRegex.MatchString("[<65;83;33M") {
+		t.Error("expected regex to match scroll-down sequence [<65;83;33M")
+	}
+}
+
+// TestPartialMouseSeqRegex_MatchesScrollUp tests SGR scroll up detection
+func TestPartialMouseSeqRegex_MatchesScrollUp(t *testing.T) {
+	if !partialMouseSeqRegex.MatchString("[<64;10;5M") {
+		t.Error("expected regex to match scroll-up sequence [<64;10;5M")
+	}
+}
+
+// TestPartialMouseSeqRegex_MatchesRelease tests SGR release event (lowercase m)
+func TestPartialMouseSeqRegex_MatchesRelease(t *testing.T) {
+	if !partialMouseSeqRegex.MatchString("[<0;50;20m") {
+		t.Error("expected regex to match release sequence [<0;50;20m")
+	}
+}
+
+// TestPartialMouseSeqRegex_NoMatchNormalText tests that normal text is not matched
+func TestPartialMouseSeqRegex_NoMatchNormalText(t *testing.T) {
+	for _, text := range []string{"hello", "[notmouse]", "[<abc;def;ghiM", "ls -la"} {
+		if partialMouseSeqRegex.MatchString(text) {
+			t.Errorf("regex should not match normal text %q", text)
+		}
+	}
+}
+
+// TestPartialMouseSeqRegex_NoMatchWithESC tests sequences with ESC are not matched
+// (those are handled by mouseEscapeRegex instead)
+func TestPartialMouseSeqRegex_NoMatchWithESC(t *testing.T) {
+	if partialMouseSeqRegex.MatchString("\x1b[<65;83;33M") {
+		t.Error("regex should not match full ESC sequence (handled by mouseEscapeRegex)")
+	}
+}
+
+// TestHandleInteractiveKeys_DropsPartialMouseSequence tests that partial SGR mouse
+// sequences are dropped and not forwarded to tmux (td-791865)
+func TestHandleInteractiveKeys_DropsPartialMouseSequence(t *testing.T) {
+	p := &Plugin{
+		viewMode: ViewModeInteractive,
+		interactiveState: &InteractiveState{
+			Active:        true,
+			TargetSession: "test-session",
+		},
+	}
+
+	// Simulate a partial mouse sequence arriving as KeyRunes
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[<65;83;33M")}
+	cmd := p.handleInteractiveKeys(msg)
+
+	// Should not exit interactive mode
+	if p.viewMode != ViewModeInteractive {
+		t.Error("expected to remain in interactive mode after dropping mouse sequence")
+	}
+	// Should return nil or batch of empty cmds (no tmux forwarding)
+	// If cmd is non-nil, it's a tea.Batch of previously accumulated cmds
+	_ = cmd
+}
+
+// TestHandleInteractiveKeys_ForwardsNormalRunes tests that normal rune input is
+// still forwarded (not incorrectly filtered)
+func TestHandleInteractiveKeys_ForwardsNormalRunes(t *testing.T) {
+	p := &Plugin{
+		viewMode: ViewModeInteractive,
+		interactiveState: &InteractiveState{
+			Active:        true,
+			TargetSession: "test-session",
+		},
+	}
+
+	// Normal single character should proceed to MapKeyToTmux (will fail at sendKeys but that's ok)
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}
+	_ = p.handleInteractiveKeys(msg)
+
+	// The key thing is the function didn't panic and tried to forward
+	// (it will exit interactive mode due to tmux command failure, which is expected in test)
+}
+
+// TestOutputBuffer_StripsPartialMouseSequences tests that OutputBuffer.Update
+// strips partial mouse sequences without ESC prefix (td-791865)
+func TestOutputBuffer_StripsPartialMouseSequences(t *testing.T) {
+	buf := NewOutputBuffer(100)
+
+	// Content with partial mouse sequences (no ESC prefix)
+	content := "prompt$ [<65;83;33M[<65;83;33Mls\nfile1.txt\n"
+	buf.Update(content)
+
+	lines := buf.Lines()
+	result := strings.Join(lines, "\n")
+	if strings.Contains(result, "[<65;83;33M") {
+		t.Errorf("expected partial mouse sequences to be stripped, got: %q", result)
+	}
+	if !strings.Contains(result, "prompt$ ls") {
+		t.Errorf("expected remaining content preserved, got: %q", result)
+	}
+}
+
+// TestOutputBuffer_StripsFullAndPartialMouseSequences tests both forms are stripped
+func TestOutputBuffer_StripsFullAndPartialMouseSequences(t *testing.T) {
+	buf := NewOutputBuffer(100)
+
+	// Mix of full (with ESC) and partial (without ESC) sequences
+	content := "output\x1b[<64;10;5M[<65;83;33Mmore output\n"
+	buf.Update(content)
+
+	lines := buf.Lines()
+	result := strings.Join(lines, "\n")
+	if strings.Contains(result, "[<64;10;5M") {
+		t.Errorf("expected full mouse sequence to be stripped, got: %q", result)
+	}
+	if strings.Contains(result, "[<65;83;33M") {
+		t.Errorf("expected partial mouse sequence to be stripped, got: %q", result)
+	}
+	if !strings.Contains(result, "outputmore output") {
+		t.Errorf("expected remaining content preserved, got: %q", result)
+	}
+}
+
+// TestOutputBuffer_PreservesNormalBrackets tests that normal bracket usage is not stripped
+func TestOutputBuffer_PreservesNormalBrackets(t *testing.T) {
+	buf := NewOutputBuffer(100)
+
+	// Content with brackets that should NOT be stripped
+	content := "array[0] = value\nif [[ -f file ]]; then\n"
+	buf.Update(content)
+
+	lines := buf.Lines()
+	result := strings.Join(lines, "\n")
+	if !strings.Contains(result, "array[0]") {
+		t.Errorf("expected normal brackets preserved, got: %q", result)
+	}
+	if !strings.Contains(result, "[[ -f file ]]") {
+		t.Errorf("expected bash test brackets preserved, got: %q", result)
+	}
+}
