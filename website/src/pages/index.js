@@ -5,30 +5,76 @@ import Layout from '@theme/Layout';
 
 const TABS = ['td', 'git', 'files', 'conversations', 'workspaces'];
 
+// For a cleaner install command, consider setting up a custom domain:
+// - Buy sidecar.dev (or similar) and set up a redirect
+// - Example: curl -fsSL sidecar.dev/install.sh | sh
+// - Or: curl -fsSL get.sidecar.dev | sh
+// Popular projects use: sh.rustup.rs, get.docker.com, brew.sh, etc.
 const INSTALL_COMMAND = 'curl -fsSL https://raw.githubusercontent.com/marcus/sidecar/main/scripts/setup.sh | bash';
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
+  const [sparkles, setSparkles] = useState([]);
+  const btnRef = useCallback(node => { if (node) node.__btnRef = node; }, []);
 
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+
+      // Generate sparkle particles
+      const colors = [
+        'var(--ifm-color-primary)',
+        'var(--sc-blue)',
+        'var(--sc-pink)',
+        'var(--sc-purple)',
+        'var(--sc-yellow)',
+        'var(--sc-orange)',
+      ];
+      const newSparkles = Array.from({ length: 24 }, (_, i) => ({
+        id: Date.now() + i,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        angle: (i * 15) + (Math.random() * 10 - 5),
+        distance: 40 + Math.random() * 60,
+        size: 3 + Math.random() * 5,
+        delay: Math.random() * 80,
+        duration: 500 + Math.random() * 300,
+      }));
+      setSparkles(newSparkles);
+
       setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setSparkles([]), 900);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
   }, [text]);
 
   return (
-    <button
-      type="button"
-      className="sc-copyBtn"
-      onClick={handleCopy}
-      aria-label={copied ? 'Copied' : 'Copy to clipboard'}
-    >
-      <i className={copied ? 'icon-check' : 'icon-copy'} />
-    </button>
+    <div className="sc-copyBtnWrap">
+      {sparkles.map(s => (
+        <span
+          key={s.id}
+          className="sc-sparkle"
+          style={{
+            '--sparkle-angle': `${s.angle}deg`,
+            '--sparkle-distance': `${s.distance}px`,
+            '--sparkle-size': `${s.size}px`,
+            '--sparkle-color': s.color,
+            '--sparkle-delay': `${s.delay}ms`,
+            '--sparkle-duration': `${s.duration}ms`,
+          }}
+        />
+      ))}
+      <button
+        ref={btnRef}
+        type="button"
+        className="sc-copyBtn"
+        onClick={handleCopy}
+        aria-label={copied ? 'Copied' : 'Copy to clipboard'}
+      >
+        <i className={copied ? 'icon-check' : 'icon-copy'} />
+      </button>
+    </div>
   );
 }
 
@@ -805,35 +851,27 @@ export default function Home() {
             </p>
 
             <div className="sc-heroCta">
-              <div className="sc-actions">
-                <Link className="sc-btn sc-btnPrimary" to="/docs/intro">
-                  Get started <span className="sc-codeInline">curl | bash</span>
+              <div className="sc-installWrapper">
+                <div className="sc-codeBlock sc-installBlock sc-installHero" aria-label="Quick install snippet">
+                  <div className="sc-installCommand">
+                    <span className="sc-lineBlue">$ </span>
+                    <span>{INSTALL_COMMAND}</span>
+                  </div>
+                </div>
+                <CopyButton text={INSTALL_COMMAND} />
+              </div>
+
+              <div className="sc-heroSecondary">
+                <Link className="sc-btnSecondary" to="/docs/intro">
+                  <i className="icon-book-open" /> Docs
                 </Link>
-                <Link className="sc-btn" to="/docs/intro">
-                  Read docs <span className="sc-codeInline">?</span>
-                </Link>
-                <a className="sc-btn" href={siteConfig.customFields?.githubUrl || 'https://github.com/marcus/sidecar'}>
-                  GitHub <span className="sc-codeInline"><i className="icon-external-link" /></span>
+                <a className="sc-btnSecondary" href={siteConfig.customFields?.githubUrl || 'https://github.com/marcus/sidecar'}>
+                  <i className="icon-github" /> GitHub
                 </a>
               </div>
 
               <div className="sc-heroNote">
-                <span className="sc-heroNoteHighlight">Free & Open Source</span> (MIT).
-              </div>
-
-              <div className="sc-codeBlock sc-installBlock sc-installHero" aria-label="Quick install snippet">
-                <div className="sc-installHeader">
-                  <span className="sc-lineDim">Quick install</span>
-                  <CopyButton text={INSTALL_COMMAND} />
-                </div>
-                <div className="sc-installCommand">
-                  <span className="sc-lineBlue">$ </span>
-                  <span>{INSTALL_COMMAND}</span>
-                </div>
-                <div>
-                  <span className="sc-lineBlue">$ </span>
-                  <span>sidecar</span>
-                </div>
+                <span className="sc-heroNoteHighlight">Free & Open Source</span> (MIT)
               </div>
             </div>
           </div>
@@ -914,7 +952,7 @@ export default function Home() {
         {/* Component Showcase Sections */}
         <section className="sc-showcase">
           <div className="container">
-            <h2 className="sc-showcaseTitle">The Plugins</h2>
+            <h2 className="sc-showcaseTitle">Sidecar's Features</h2>
           </div>
 
           <div className="sc-showcaseFullWidth">
@@ -1003,7 +1041,7 @@ export default function Home() {
         {/* Comprehensive Features Section */}
         <section className="sc-features">
           <div className="container">
-            <h2 className="sc-featuresTitle">Features</h2>
+            <h2 className="sc-featuresTitle">Additional Features</h2>
 
             <div className="sc-featuresGrid">
               <FeatureListItem
@@ -1242,26 +1280,21 @@ export default function Home() {
         <section className="sc-bottomCta">
           <div className="container">
             <h2 className="sc-bottomCtaTitle">Get started in seconds</h2>
-            <div className="sc-codeBlock sc-installBlock sc-bottomInstall">
-              <div className="sc-installHeader">
-                <span className="sc-lineDim">Quick install</span>
-                <CopyButton text={INSTALL_COMMAND} />
+            <div className="sc-installWrapper">
+              <div className="sc-codeBlock sc-installBlock sc-installHero" aria-label="Quick install snippet">
+                <div className="sc-installCommand">
+                  <span className="sc-lineBlue">$ </span>
+                  <span>{INSTALL_COMMAND}</span>
+                </div>
               </div>
-              <div className="sc-installCommand">
-                <span className="sc-lineBlue">$ </span>
-                <span>{INSTALL_COMMAND}</span>
-              </div>
-              <div>
-                <span className="sc-lineBlue">$ </span>
-                <span>sidecar</span>
-              </div>
+              <CopyButton text={INSTALL_COMMAND} />
             </div>
             <div className="sc-bottomCtaLinks">
-              <Link className="sc-btn sc-btnPrimary" to="/docs/intro">
-                Read the docs
+              <Link className="sc-btnSecondary" to="/docs/intro">
+                <i className="icon-book-open" /> Docs
               </Link>
-              <a className="sc-btn" href="https://github.com/marcus/sidecar">
-                View on GitHub
+              <a className="sc-btnSecondary" href="https://github.com/marcus/sidecar">
+                <i className="icon-github" /> GitHub
               </a>
             </div>
           </div>

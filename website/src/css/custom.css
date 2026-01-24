@@ -281,7 +281,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 32px;
+  gap: 16px;
   width: 100%;
   margin-top: 16px;
 }
@@ -298,6 +298,7 @@ a:hover {
   font-size: 13px;
   color: var(--ifm-font-color-secondary);
   font-family: var(--ifm-font-family-monospace);
+  margin-top: 4px;
 }
 
 .sc-heroNoteHighlight {
@@ -305,10 +306,149 @@ a:hover {
   font-weight: 600;
 }
 
-.sc-installHero {
+.sc-installWrapper {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
   width: 100%;
-  max-width: 600px;
+  max-width: 820px;
+}
+
+.sc-installHero {
+  flex: 1;
   text-align: left;
+  font-size: 16px;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(166, 226, 46, 0.08) 0%, rgba(102, 217, 239, 0.06) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.3)),
+    rgba(23, 26, 31, 0.85);
+  border: 1px solid rgba(166, 226, 46, 0.25);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 40px rgba(166, 226, 46, 0.15);
+  transition: all 200ms ease;
+  position: relative;
+}
+
+/* Subtle fade hint for scrollable content */
+.sc-installHero::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40px;
+  background: linear-gradient(90deg, transparent, rgba(23, 26, 31, 0.85));
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.sc-installHero:hover {
+  border-color: rgba(166, 226, 46, 0.4);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+    0 0 50px rgba(166, 226, 46, 0.2);
+}
+
+.sc-installHero .sc-installCommand {
+  flex: 1;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  line-height: 1.5;
+  color: rgba(232, 232, 227, 0.95);
+  font-weight: 500;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(166, 226, 46, 0.3) rgba(0, 0, 0, 0.2);
+  padding-right: 24px;
+}
+
+/* Webkit scrollbar styling */
+.sc-installHero .sc-installCommand::-webkit-scrollbar {
+  height: 6px;
+}
+
+.sc-installHero .sc-installCommand::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  margin-top: 4px;
+}
+
+.sc-installHero .sc-installCommand::-webkit-scrollbar-thumb {
+  background: rgba(166, 226, 46, 0.3);
+  border-radius: 3px;
+  transition: background 150ms ease;
+}
+
+.sc-installHero .sc-installCommand::-webkit-scrollbar-thumb:hover {
+  background: rgba(166, 226, 46, 0.5);
+}
+
+.sc-installHero .sc-lineBlue {
+  color: var(--sc-blue);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .sc-installWrapper {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .sc-installHero {
+    padding: 16px 20px;
+    font-size: 14px;
+    width: 100%;
+  }
+
+  .sc-installHero .sc-installCommand {
+    font-size: 14px;
+  }
+
+  .sc-installWrapper .sc-copyBtnWrap {
+    width: 100%;
+  }
+
+  .sc-installWrapper .sc-copyBtn {
+    width: 100%;
+    height: 48px;
+  }
+}
+
+.sc-heroSecondary {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.sc-btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(232, 232, 227, 0.8);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--sc-border);
+  transition: all 150ms ease;
+  text-decoration: none;
+}
+
+.sc-btnSecondary:hover {
+  color: var(--ifm-font-color-base);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  text-decoration: none;
+  transform: translateY(-1px);
 }
 
 .sc-demoSection {
@@ -339,10 +479,10 @@ a:hover {
 }
 
 .sc-logo {
-  max-width: 520px;
+  max-width: 380px;
   width: 100%;
   height: auto;
-  margin: 40px 0 48px;
+  margin: 30px 0 40px;
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.35));
 }
 
@@ -387,10 +527,10 @@ a:hover {
 }
 
 .sc-subtitle {
-  margin: 0 0 24px;
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--ifm-font-color-secondary);
+  margin: 0 0 32px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: rgba(232, 232, 227, 0.65);
   max-width: 64ch;
   text-align: center;
 }
@@ -749,6 +889,7 @@ a:hover {
 
 /* ---------- Copy button ---------- */
 
+/* Copy button - default (used in bottom CTA etc) */
 .sc-copyBtn {
   display: inline-flex;
   align-items: center;
@@ -773,6 +914,86 @@ a:hover {
 
 .sc-copyBtn .icon-check {
   color: var(--ifm-color-primary);
+  animation: checkPop 200ms ease;
+}
+
+@keyframes checkPop {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Hero install copy button wrapper */
+.sc-installWrapper .sc-copyBtnWrap {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.sc-installWrapper .sc-copyBtn {
+  width: 56px;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(166, 226, 46, 0.45);
+  background:
+    linear-gradient(180deg, rgba(166, 226, 46, 0.2), rgba(166, 226, 46, 0.08)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.2));
+  color: var(--ifm-color-primary);
+  font-size: 20px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(166, 226, 46, 0.15) inset,
+    0 0 30px rgba(166, 226, 46, 0.12);
+  transition: all 180ms ease;
+}
+
+.sc-installWrapper .sc-copyBtn:hover {
+  border-color: rgba(166, 226, 46, 0.65);
+  color: #c8f66a;
+  background:
+    linear-gradient(180deg, rgba(166, 226, 46, 0.3), rgba(166, 226, 46, 0.12)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.15));
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(166, 226, 46, 0.25) inset,
+    0 0 40px rgba(166, 226, 46, 0.2);
+  transform: translateY(-1px);
+}
+
+.sc-installWrapper .sc-copyBtn:active {
+  transform: scale(0.97);
+}
+
+/* Sparkle particles */
+.sc-sparkle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--sparkle-size);
+  height: var(--sparkle-size);
+  background: var(--sparkle-color);
+  border-radius: 999px;
+  pointer-events: none;
+  animation: sparkleOut var(--sparkle-duration) ease-out var(--sparkle-delay) forwards;
+  opacity: 0;
+  box-shadow: 0 0 6px var(--sparkle-color);
+  z-index: 10;
+}
+
+@keyframes sparkleOut {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--sparkle-angle)) translateX(0) scale(1);
+  }
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--sparkle-angle)) translateX(var(--sparkle-distance)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--sparkle-angle)) translateX(calc(var(--sparkle-distance) * 1.2)) scale(0.3);
+  }
 }
 
 /* ---------- Install block ---------- */
@@ -782,15 +1003,15 @@ a:hover {
   font-size: 14px;
 }
 
+.sc-installCommand {
+  word-break: break-all;
+}
+
 .sc-installHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
-}
-
-.sc-installCommand {
-  word-break: break-all;
 }
 
 /* ---------- Feature cards enhanced ---------- */
@@ -881,9 +1102,36 @@ a:hover {
 }
 
 .sc-showcaseTitle {
-  font-size: 24px;
-  margin: 0 0 8px;
-  letter-spacing: -0.3px;
+  font-size: 36px;
+  margin: 0 0 16px;
+  letter-spacing: -0.6px;
+  text-align: center;
+  background: linear-gradient(135deg,
+    var(--ifm-color-primary) 0%,
+    var(--sc-blue) 50%,
+    var(--sc-purple) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  position: relative;
+  padding-bottom: 12px;
+}
+
+.sc-showcaseTitle::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 3px;
+  background: linear-gradient(90deg,
+    transparent,
+    var(--ifm-color-primary) 20%,
+    var(--sc-blue) 50%,
+    var(--sc-purple) 80%,
+    transparent);
+  border-radius: 999px;
 }
 
 .sc-showcaseTitle,
@@ -1358,10 +1606,9 @@ a:hover {
   letter-spacing: -0.3px;
 }
 
-.sc-bottomInstall {
-  max-width: 600px;
+.sc-bottomCta .sc-installWrapper {
+  justify-content: center;
   margin: 0 auto 24px;
-  text-align: left;
 }
 
 .sc-bottomCtaLinks {
