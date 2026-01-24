@@ -32,7 +32,7 @@ import (
 	"github.com/marcus/sidecar/internal/plugins/tdmonitor"
 	"github.com/marcus/sidecar/internal/plugins/workspace"
 	"github.com/marcus/sidecar/internal/state"
-	"github.com/marcus/sidecar/internal/styles"
+	"github.com/marcus/sidecar/internal/theme"
 )
 
 // Version is set at build time via ldflags
@@ -98,9 +98,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Apply theme from config
-	styles.ApplyThemeWithGenericOverrides(cfg.UI.Theme.Name, cfg.UI.Theme.Overrides)
-
 	// Initialize feature flags
 	features.Init(cfg)
 	applyFeatureOverrides()
@@ -118,6 +115,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to resolve project root: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Apply theme from config (after workDir is known for per-project themes)
+	resolved := theme.ResolveTheme(cfg, workDir)
+	theme.ApplyResolved(resolved)
 
 	// Create keymap registry first (plugins may register bindings during Init)
 	km := keymap.NewRegistry()

@@ -193,3 +193,83 @@ func clampByte(v float64) uint8 {
 	}
 	return uint8(math.Round(v))
 }
+
+// ContrastRatio returns the WCAG 2.0 contrast ratio between two colors (1 to 21).
+func ContrastRatio(fg, bg string) float64 {
+	l1 := Luminance(fg)
+	l2 := Luminance(bg)
+	if l1 < l2 {
+		l1, l2 = l2, l1
+	}
+	return (l1 + 0.05) / (l2 + 0.05)
+}
+
+// EnsureContrast adjusts fg until the contrast ratio against bg meets minRatio.
+// Blends toward whichever pole (white or black) achieves the target with the smallest shift.
+// Returns the original fg if already sufficient.
+func EnsureContrast(fg, bg string, minRatio float64) string {
+	return ensureContrastForBackgrounds(fg, []string{bg}, minRatio)
+}
+
+func ensureContrastForBackgrounds(fg string, bgs []string, minRatio float64) string {
+	if len(bgs) == 0 {
+		return fg
+	}
+
+	if minContrastRatio(fg, bgs) >= minRatio {
+		return fg
+	}
+
+	targets := []string{"#ffffff", "#000000"}
+	bestTarget := ""
+	bestBlend := 0.0
+	bestBlendFound := false
+	bestTargetContrast := 0.0
+	bestTargetColor := ""
+
+	for _, target := range targets {
+		targetMin := minContrastRatio(target, bgs)
+		if targetMin > bestTargetContrast {
+			bestTargetContrast = targetMin
+			bestTargetColor = target
+		}
+		if targetMin < minRatio {
+			continue
+		}
+		lo, hi := 0.0, 1.0
+		for i := 0; i < 16; i++ {
+			mid := (lo + hi) / 2
+			if minContrastRatio(Blend(fg, target, mid), bgs) >= minRatio {
+				hi = mid
+			} else {
+				lo = mid
+			}
+		}
+		if !bestBlendFound || hi < bestBlend {
+			bestBlendFound = true
+			bestBlend = hi
+			bestTarget = target
+		}
+	}
+
+	if bestBlendFound {
+		return Blend(fg, bestTarget, bestBlend)
+	}
+	if bestTargetColor != "" && bestTargetContrast > minContrastRatio(fg, bgs) {
+		return bestTargetColor
+	}
+	return fg
+}
+
+func minContrastRatio(fg string, bgs []string) float64 {
+	if len(bgs) == 0 {
+		return ContrastRatio(fg, "#000000")
+	}
+	minRatio := math.MaxFloat64
+	for _, bg := range bgs {
+		if ratio := ContrastRatio(fg, bg); ratio < minRatio {
+			minRatio = ratio
+		}
+	}
+	return minRatio
+}

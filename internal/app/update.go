@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,6 +14,7 @@ import (
 	"github.com/marcus/sidecar/internal/plugin"
 	"github.com/marcus/sidecar/internal/state"
 	"github.com/marcus/sidecar/internal/styles"
+	"github.com/marcus/sidecar/internal/theme"
 	"github.com/marcus/sidecar/internal/version"
 )
 
@@ -523,6 +525,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.projectSwitcherCursor = 0
 			}
 			m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(m.projectSwitcherCursor, m.projectSwitcherScroll, 8)
+			m.previewProjectTheme()
 			return m, nil
 
 		case tea.KeyDown:
@@ -534,6 +537,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.projectSwitcherCursor = 0
 			}
 			m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(m.projectSwitcherCursor, m.projectSwitcherScroll, 8)
+			m.previewProjectTheme()
 			return m, nil
 		}
 
@@ -548,6 +552,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.projectSwitcherCursor = 0
 			}
 			m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(m.projectSwitcherCursor, m.projectSwitcherScroll, 8)
+			m.previewProjectTheme()
 			return m, nil
 
 		case "ctrl+p":
@@ -556,6 +561,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.projectSwitcherCursor = 0
 			}
 			m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(m.projectSwitcherCursor, m.projectSwitcherScroll, 8)
+			m.previewProjectTheme()
 			return m, nil
 
 		case "ctrl+a":
@@ -585,6 +591,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.projectSwitcherScroll = 0
 		m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(m.projectSwitcherCursor, m.projectSwitcherScroll, 8)
+		m.previewProjectTheme()
 
 		return m, cmd
 	}
@@ -602,6 +609,19 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// ctrl+s or left/right toggles scope between global and project
+		if m.currentProjectConfig() != nil {
+			switch msg.String() {
+			case "ctrl+s", "left", "right":
+				if m.themeSwitcherScope == "global" {
+					m.themeSwitcherScope = "project"
+				} else {
+					m.themeSwitcherScope = "global"
+				}
+				return m, nil
+			}
+		}
+
 		// Community browser sub-mode handles its own keys
 		if m.showCommunityBrowser {
 			return m.handleCommunityBrowserKey(msg)
@@ -614,16 +634,22 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Confirm selection and close
 			if m.themeSwitcherCursor >= 0 && m.themeSwitcherCursor < len(themes) {
 				selectedTheme := themes[m.themeSwitcherCursor]
+				scope := m.themeSwitcherScope
 				m.resetThemeSwitcher()
 				m.updateContext()
-				// Persist to config
-				if err := config.SaveTheme(selectedTheme); err != nil {
+				// Persist to config based on scope
+				tc := config.ThemeConfig{Name: selectedTheme}
+				if err := m.saveThemeForScope(tc); err != nil {
 					return m, func() tea.Msg {
 						return ToastMsg{Message: "Theme applied (save failed)", Duration: 3 * time.Second, IsError: true}
 					}
 				}
+				toastMsg := "Theme: " + selectedTheme + " (global)"
+				if scope == "project" {
+					toastMsg = "Theme: " + selectedTheme + " (project)"
+				}
 				return m, func() tea.Msg {
-					return ToastMsg{Message: "Theme: " + selectedTheme, Duration: 2 * time.Second}
+					return ToastMsg{Message: toastMsg, Duration: 2 * time.Second}
 				}
 			}
 			return m, nil
@@ -1012,6 +1038,7 @@ func (m Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd)
 				case tea.MouseActionMotion:
 					// Hover effect
 					m.projectSwitcherHover = projectIdx
+					m.previewProjectTheme()
 				}
 			}
 		} else {
@@ -1030,6 +1057,7 @@ func (m Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd)
 			}
 			// Update scroll if cursor goes above visible area
 			m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(m.projectSwitcherCursor, m.projectSwitcherScroll, maxVisible)
+			m.previewProjectTheme()
 		case tea.MouseButtonWheelDown:
 			m.projectSwitcherCursor++
 			if m.projectSwitcherCursor >= len(projects) {
@@ -1040,6 +1068,7 @@ func (m Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd)
 			}
 			// Update scroll if cursor goes below visible area
 			m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(m.projectSwitcherCursor, m.projectSwitcherScroll, maxVisible)
+			m.previewProjectTheme()
 		}
 
 		return m, nil
@@ -1274,24 +1303,32 @@ func (m Model) handleQuitConfirmMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleProjectAddKeys handles keyboard input for the project add sub-mode.
-// Focus: 0=name, 1=path, 2=add button, 3=cancel button
+// Focus: 0=name, 1=path, 2=theme, 3=add button, 4=cancel button
 func (m Model) handleProjectAddKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// If theme picker is open, handle it separately
+	if m.projectAddThemeMode {
+		return m.handleProjectAddThemePickerKeys(msg)
+	}
+
 	switch msg.String() {
 	case "tab":
 		m.blurProjectAddInputs()
-		m.projectAddFocus = (m.projectAddFocus + 1) % 4
+		m.projectAddFocus = (m.projectAddFocus + 1) % 5
 		m.focusProjectAddInput()
 		return m, nil
 
 	case "shift+tab":
 		m.blurProjectAddInputs()
-		m.projectAddFocus = (m.projectAddFocus + 3) % 4
+		m.projectAddFocus = (m.projectAddFocus + 4) % 5
 		m.focusProjectAddInput()
 		return m, nil
 
 	case "enter":
 		switch m.projectAddFocus {
-		case 2: // Add button
+		case 2: // Theme selector — open picker
+			m.initProjectAddThemePicker()
+			return m, nil
+		case 3: // Add button
 			if errMsg := m.validateProjectAdd(); errMsg != "" {
 				m.projectAddError = errMsg
 				return m, nil
@@ -1299,7 +1336,7 @@ func (m Model) handleProjectAddKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd := m.saveProjectAdd()
 			m.resetProjectAdd()
 			return m, cmd
-		case 3: // Cancel button
+		case 4: // Cancel button
 			m.resetProjectAdd()
 			return m, nil
 		}
@@ -1315,6 +1352,129 @@ func (m Model) handleProjectAddKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.projectAddPathInput, cmd = m.projectAddPathInput.Update(msg)
 	}
 	return m, cmd
+}
+
+// handleProjectAddThemePickerKeys handles keys within the theme picker sub-modal.
+func (m Model) handleProjectAddThemePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.projectAddCommunityMode {
+		return m.handleProjectAddCommunityKeys(msg)
+	}
+
+	maxVisible := 6
+	switch msg.String() {
+	case "esc":
+		m.resetProjectAddThemePicker()
+		// Restore theme
+		resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)
+		theme.ApplyResolved(resolved)
+		return m, nil
+
+	case "tab":
+		// Switch to community themes
+		m.projectAddCommunityMode = true
+		m.projectAddCommunityList = community.ListSchemes()
+		m.projectAddCommunityCursor = 0
+		m.projectAddCommunityScroll = 0
+		return m, nil
+
+	case "up", "k":
+		if m.projectAddThemeCursor > 0 {
+			m.projectAddThemeCursor--
+			if m.projectAddThemeCursor < m.projectAddThemeScroll {
+				m.projectAddThemeScroll = m.projectAddThemeCursor
+			}
+			m.previewProjectAddTheme()
+		}
+		return m, nil
+
+	case "down", "j":
+		if m.projectAddThemeCursor < len(m.projectAddThemeFiltered)-1 {
+			m.projectAddThemeCursor++
+			if m.projectAddThemeCursor >= m.projectAddThemeScroll+maxVisible {
+				m.projectAddThemeScroll = m.projectAddThemeCursor - maxVisible + 1
+			}
+			m.previewProjectAddTheme()
+		}
+		return m, nil
+
+	case "enter":
+		if m.projectAddThemeCursor >= 0 && m.projectAddThemeCursor < len(m.projectAddThemeFiltered) {
+			m.projectAddThemeSelected = m.projectAddThemeFiltered[m.projectAddThemeCursor]
+		}
+		m.resetProjectAddThemePicker()
+		// Restore theme
+		resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)
+		theme.ApplyResolved(resolved)
+		return m, nil
+	}
+
+	// Forward to filter input
+	var cmd tea.Cmd
+	m.projectAddThemeInput, cmd = m.projectAddThemeInput.Update(msg)
+	// Re-filter
+	query := m.projectAddThemeInput.Value()
+	all := append([]string{"(use global)"}, styles.ListThemes()...)
+	if query == "" {
+		m.projectAddThemeFiltered = all
+	} else {
+		var filtered []string
+		q := strings.ToLower(query)
+		for _, name := range all {
+			if strings.Contains(strings.ToLower(name), q) {
+				filtered = append(filtered, name)
+			}
+		}
+		m.projectAddThemeFiltered = filtered
+	}
+	m.projectAddThemeCursor = 0
+	m.projectAddThemeScroll = 0
+	return m, cmd
+}
+
+// handleProjectAddCommunityKeys handles keys in the community sub-browser within add-project.
+func (m Model) handleProjectAddCommunityKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	maxVisible := 6
+	switch msg.String() {
+	case "esc", "tab":
+		// Back to built-in themes
+		m.projectAddCommunityMode = false
+		// Restore theme
+		resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)
+		theme.ApplyResolved(resolved)
+		return m, nil
+
+	case "up", "k":
+		if m.projectAddCommunityCursor > 0 {
+			m.projectAddCommunityCursor--
+			if m.projectAddCommunityCursor < m.projectAddCommunityScroll {
+				m.projectAddCommunityScroll = m.projectAddCommunityCursor
+			}
+			m.previewProjectAddCommunity()
+		}
+		return m, nil
+
+	case "down", "j":
+		if m.projectAddCommunityCursor < len(m.projectAddCommunityList)-1 {
+			m.projectAddCommunityCursor++
+			if m.projectAddCommunityCursor >= m.projectAddCommunityScroll+maxVisible {
+				m.projectAddCommunityScroll = m.projectAddCommunityCursor - maxVisible + 1
+			}
+			m.previewProjectAddCommunity()
+		}
+		return m, nil
+
+	case "enter":
+		if m.projectAddCommunityCursor >= 0 && m.projectAddCommunityCursor < len(m.projectAddCommunityList) {
+			m.projectAddThemeSelected = m.projectAddCommunityList[m.projectAddCommunityCursor]
+		}
+		m.resetProjectAddThemePicker()
+		// Restore theme
+		resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)
+		theme.ApplyResolved(resolved)
+		return m, nil
+	}
+
+	return m, nil
 }
 
 // blurProjectAddInputs blurs all project add textinputs.
@@ -1335,23 +1495,13 @@ func (m *Model) focusProjectAddInput() {
 
 // handleProjectAddMouse handles mouse events for the project add sub-mode.
 func (m Model) handleProjectAddMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Calculate modal dimensions and button positions (same pattern as quit modal)
-	// Each \n\n = 1 blank line, each bordered input = 2 lines
-	// Line 0: "Add Project"
-	// Line 1: blank (\n\n)
-	// Line 2: "Name:"
-	// Lines 3-4: name input (bordered, 2 lines)
-	// Line 5: blank (\n\n)
-	// Line 6: "Path:"
-	// Lines 7-8: path input (bordered, 2 lines)
-	// Line 9: blank (\n)
-	// WITHOUT error: Line 10: blank (\n), Line 11: buttons, Line 12: blank (\n\n), Line 13: help
-	// WITH error: Line 10: blank (\n), Line 11: error, Line 12: blank (\n), Line 13: blank (\n), Line 14: buttons, Line 15: blank (\n\n), Line 16: help
-	modalContentLines := 14  // Without error
-	linesBeforeButtons := 10 // Without error
+	// Layout: Title(1) + blank(1) + Name:(1) + input(2) + blank(1) + Path:(1) + input(2) +
+	//         blank(1) + Theme:(1) + input(2) + blank(1) + blank(1) + buttons(1) + blank(1) + help(1)
+	modalContentLines := 18  // Without error
+	linesBeforeButtons := 14 // Without error
 	if m.projectAddError != "" {
-		modalContentLines = 17
-		linesBeforeButtons = 13 // With error (add 3: blank + error + blank)
+		modalContentLines = 21
+		linesBeforeButtons = 17 // With error (add 3: blank + error + blank)
 	}
 	modalHeight := modalContentLines + 4 // ModalBox padding/border
 	modalWidth := 50
@@ -1431,20 +1581,28 @@ func (m Model) handleCommunityBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			selectedName := schemes[m.communityBrowserCursor]
 			scheme := community.GetScheme(selectedName)
 			if scheme != nil {
-				palette := community.Convert(scheme)
-				overrides := community.PaletteToOverrides(palette)
-				overrides["communityName"] = selectedName
-				styles.ApplyThemeWithGenericOverrides("default", overrides)
+				// Apply immediately for visual effect
+				theme.ApplyResolved(theme.ResolvedTheme{
+					BaseName:      "default",
+					CommunityName: selectedName,
+				})
+				scope := m.themeSwitcherScope
 				m.resetCommunityBrowser()
 				m.resetThemeSwitcher()
 				m.updateContext()
-				if err := config.SaveThemeWithOverrides("default", overrides); err != nil {
+				// Persist based on scope
+				tc := config.ThemeConfig{Name: "default", Community: selectedName}
+				if err := m.saveThemeForScope(tc); err != nil {
 					return m, func() tea.Msg {
 						return ToastMsg{Message: "Theme applied (save failed)", Duration: 3 * time.Second, IsError: true}
 					}
 				}
+				scopeLabel := "global"
+				if scope == "project" {
+					scopeLabel = "project"
+				}
 				return m, func() tea.Msg {
-					return ToastMsg{Message: "Theme: " + selectedName + " (community)", Duration: 2 * time.Second}
+					return ToastMsg{Message: "Theme: " + selectedName + " (" + scopeLabel + ")", Duration: 2 * time.Second}
 				}
 			}
 		}
@@ -1526,12 +1684,10 @@ func (m Model) handleCommunityBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) previewCommunityScheme() {
 	schemes := m.communityBrowserFiltered
 	if m.communityBrowserCursor >= 0 && m.communityBrowserCursor < len(schemes) {
-		scheme := community.GetScheme(schemes[m.communityBrowserCursor])
-		if scheme != nil {
-			palette := community.Convert(scheme)
-			overrides := community.PaletteToOverrides(palette)
-			styles.ApplyThemeWithGenericOverrides("default", overrides)
-		}
+		theme.ApplyResolved(theme.ResolvedTheme{
+			BaseName:      "default",
+			CommunityName: schemes[m.communityBrowserCursor],
+		})
 	}
 }
 
@@ -1585,31 +1741,35 @@ func (m Model) handleCommunityBrowserMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd
 						selectedName := schemes[schemeIdx]
 						scheme := community.GetScheme(selectedName)
 						if scheme != nil {
-							palette := community.Convert(scheme)
-							overrides := community.PaletteToOverrides(palette)
-							overrides["communityName"] = selectedName
-							styles.ApplyThemeWithGenericOverrides("default", overrides)
+							theme.ApplyResolved(theme.ResolvedTheme{
+								BaseName:      "default",
+								CommunityName: selectedName,
+							})
+							scope := m.themeSwitcherScope
 							m.resetCommunityBrowser()
 							m.resetThemeSwitcher()
 							m.updateContext()
-							if err := config.SaveThemeWithOverrides("default", overrides); err != nil {
+							tc := config.ThemeConfig{Name: "default", Community: selectedName}
+							if err := m.saveThemeForScope(tc); err != nil {
 								return m, func() tea.Msg {
 									return ToastMsg{Message: "Theme applied (save failed)", Duration: 3 * time.Second, IsError: true}
 								}
 							}
+							scopeLabel := "global"
+							if scope == "project" {
+								scopeLabel = "project"
+							}
 							return m, func() tea.Msg {
-								return ToastMsg{Message: "Theme: " + selectedName + " (community)", Duration: 2 * time.Second}
+								return ToastMsg{Message: "Theme: " + selectedName + " (" + scopeLabel + ")", Duration: 2 * time.Second}
 							}
 						}
 					}
 				case tea.MouseActionMotion:
 					m.communityBrowserHover = schemeIdx
-					scheme := community.GetScheme(schemes[schemeIdx])
-					if scheme != nil {
-						palette := community.Convert(scheme)
-						overrides := community.PaletteToOverrides(palette)
-						styles.ApplyThemeWithGenericOverrides("default", overrides)
-					}
+					theme.ApplyResolved(theme.ResolvedTheme{
+						BaseName:      "default",
+						CommunityName: schemes[schemeIdx],
+					})
 				}
 			}
 		} else {

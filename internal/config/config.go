@@ -25,8 +25,9 @@ type ProjectsConfig struct {
 
 // ProjectConfig represents a single project in the project switcher.
 type ProjectConfig struct {
-	Name string `json:"name"` // display name for the project
-	Path string `json:"path"` // absolute path to project root (supports ~ expansion)
+	Name  string       `json:"name"`            // display name for the project
+	Path  string       `json:"path"`            // absolute path to project root (supports ~ expansion)
+	Theme *ThemeConfig `json:"theme,omitempty"` // per-project theme (nil = use global)
 }
 
 // PluginsConfig holds per-plugin configuration.
@@ -90,7 +91,8 @@ type UIConfig struct {
 // ThemeConfig configures the color theme.
 type ThemeConfig struct {
 	Name      string                 `json:"name"`
-	Overrides map[string]interface{} `json:"overrides"`
+	Community string                 `json:"community,omitempty"` // community scheme name (resolved at runtime)
+	Overrides map[string]interface{} `json:"overrides,omitempty"` // user customizations on top
 }
 
 // Default returns the default configuration.

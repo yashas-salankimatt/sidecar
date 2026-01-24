@@ -30,8 +30,9 @@ type rawProjectsConfig struct {
 }
 
 type rawProjectConfig struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name  string       `json:"name"`
+	Path  string       `json:"path"`
+	Theme *ThemeConfig `json:"theme,omitempty"`
 }
 
 type rawPluginsConfig struct {
@@ -132,8 +133,9 @@ func mergeConfig(cfg *Config, raw *rawConfig) {
 		cfg.Projects.List = make([]ProjectConfig, len(raw.Projects.List))
 		for i, rp := range raw.Projects.List {
 			cfg.Projects.List[i] = ProjectConfig{
-				Name: rp.Name,
-				Path: rp.Path,
+				Name:  rp.Name,
+				Path:  rp.Path,
+				Theme: rp.Theme,
 			}
 		}
 	}
@@ -202,9 +204,22 @@ func mergeConfig(cfg *Config, raw *rawConfig) {
 	if raw.UI.Theme.Name != "" {
 		cfg.UI.Theme.Name = raw.UI.Theme.Name
 	}
+	if raw.UI.Theme.Community != "" {
+		cfg.UI.Theme.Community = raw.UI.Theme.Community
+	}
 	if raw.UI.Theme.Overrides != nil {
 		for k, v := range raw.UI.Theme.Overrides {
 			cfg.UI.Theme.Overrides[k] = v
+		}
+	}
+	// Migrate legacy communityName from overrides to Community field
+	if cfg.UI.Theme.Community == "" && cfg.UI.Theme.Overrides != nil {
+		if name, ok := cfg.UI.Theme.Overrides["communityName"]; ok {
+			if s, ok := name.(string); ok && s != "" {
+				cfg.UI.Theme.Community = s
+				// Clear overrides — colors will be re-derived from community scheme at runtime
+				cfg.UI.Theme.Overrides = nil
+			}
 		}
 	}
 

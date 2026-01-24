@@ -326,6 +326,21 @@ func (m Model) renderProjectAddOverlay(content string) string {
 	b.WriteString(pathLabel)
 	b.WriteString("\n")
 	b.WriteString(pathStyle.Render(m.projectAddPathInput.View()))
+	b.WriteString("\n\n")
+
+	// Theme field
+	themeLabel := "Theme:"
+	themeValue := "(use global)"
+	if m.projectAddThemeSelected != "" {
+		themeValue = m.projectAddThemeSelected
+	}
+	themeFieldStyle := inputStyle
+	if m.projectAddFocus == 2 {
+		themeFieldStyle = inputFocusedStyle
+	}
+	b.WriteString(themeLabel)
+	b.WriteString("\n")
+	b.WriteString(themeFieldStyle.Render(themeValue))
 	b.WriteString("\n")
 
 	// Error message
@@ -341,12 +356,12 @@ func (m Model) renderProjectAddOverlay(content string) string {
 	// Buttons
 	addBtnStyle := styles.Button
 	cancelBtnStyle := styles.Button
-	if m.projectAddFocus == 2 {
+	if m.projectAddFocus == 3 {
 		addBtnStyle = styles.ButtonFocused
 	} else if m.projectAddButtonHover == 1 {
 		addBtnStyle = styles.ButtonHover
 	}
-	if m.projectAddFocus == 3 {
+	if m.projectAddFocus == 4 {
 		cancelBtnStyle = styles.ButtonFocused
 	} else if m.projectAddButtonHover == 2 {
 		cancelBtnStyle = styles.ButtonHover
@@ -365,6 +380,107 @@ func (m Model) renderProjectAddOverlay(content string) string {
 	b.WriteString(styles.Muted.Render(" back"))
 
 	modal := styles.ModalBox.Render(b.String())
+	base := ui.OverlayModal(content, modal, m.width, m.height)
+
+	// If theme picker is open, render it on top
+	if m.projectAddThemeMode {
+		return m.renderProjectAddThemePickerOverlay(base)
+	}
+	return base
+}
+
+// renderProjectAddThemePickerOverlay renders the theme picker within add-project.
+func (m Model) renderProjectAddThemePickerOverlay(content string) string {
+	var b strings.Builder
+	maxVisible := 6
+	cursorStyle := lipgloss.NewStyle().Foreground(styles.Primary)
+	selectedStyle := lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
+
+	if m.projectAddCommunityMode {
+		// Community sub-browser
+		b.WriteString(styles.ModalTitle.Render("Community Themes"))
+		b.WriteString("\n\n")
+
+		list := m.projectAddCommunityList
+		visibleCount := len(list)
+		if visibleCount > maxVisible {
+			visibleCount = maxVisible
+		}
+
+		if m.projectAddCommunityScroll > 0 {
+			b.WriteString(styles.Muted.Render("  ↑ more"))
+			b.WriteString("\n")
+		}
+
+		for i := m.projectAddCommunityScroll; i < m.projectAddCommunityScroll+visibleCount && i < len(list); i++ {
+			cursor := "  "
+			nameStyle := styles.Muted
+			if i == m.projectAddCommunityCursor {
+				cursor = cursorStyle.Render("▸ ")
+				nameStyle = selectedStyle
+			}
+			b.WriteString(cursor)
+			b.WriteString(nameStyle.Render(list[i]))
+			b.WriteString("\n")
+		}
+
+		if len(list) > m.projectAddCommunityScroll+visibleCount {
+			b.WriteString(styles.Muted.Render("  ↓ more"))
+			b.WriteString("\n")
+		}
+
+		b.WriteString("\n")
+		b.WriteString(styles.KeyHint.Render("enter"))
+		b.WriteString(styles.Muted.Render(" select  "))
+		b.WriteString(styles.KeyHint.Render("tab"))
+		b.WriteString(styles.Muted.Render(" built-in  "))
+		b.WriteString(styles.KeyHint.Render("esc"))
+		b.WriteString(styles.Muted.Render(" back"))
+	} else {
+		// Built-in theme list
+		b.WriteString(styles.ModalTitle.Render("Pick Theme"))
+		b.WriteString("\n\n")
+		b.WriteString(m.projectAddThemeInput.View())
+		b.WriteString("\n\n")
+
+		list := m.projectAddThemeFiltered
+		visibleCount := len(list)
+		if visibleCount > maxVisible {
+			visibleCount = maxVisible
+		}
+
+		if m.projectAddThemeScroll > 0 {
+			b.WriteString(styles.Muted.Render("  ↑ more"))
+			b.WriteString("\n")
+		}
+
+		for i := m.projectAddThemeScroll; i < m.projectAddThemeScroll+visibleCount && i < len(list); i++ {
+			cursor := "  "
+			nameStyle := styles.Muted
+			if i == m.projectAddThemeCursor {
+				cursor = cursorStyle.Render("▸ ")
+				nameStyle = selectedStyle
+			}
+			b.WriteString(cursor)
+			b.WriteString(nameStyle.Render(list[i]))
+			b.WriteString("\n")
+		}
+
+		if len(list) > m.projectAddThemeScroll+visibleCount {
+			b.WriteString(styles.Muted.Render("  ↓ more"))
+			b.WriteString("\n")
+		}
+
+		b.WriteString("\n")
+		b.WriteString(styles.KeyHint.Render("enter"))
+		b.WriteString(styles.Muted.Render(" select  "))
+		b.WriteString(styles.KeyHint.Render("tab"))
+		b.WriteString(styles.Muted.Render(" community  "))
+		b.WriteString(styles.KeyHint.Render("esc"))
+		b.WriteString(styles.Muted.Render(" back"))
+	}
+
+	modal := styles.ModalBox.Render(b.String())
 	return ui.OverlayModal(content, modal, m.width, m.height)
 }
 
@@ -378,8 +494,6 @@ func (m Model) renderThemeSwitcherOverlay(content string) string {
 
 	// Title
 	b.WriteString(styles.ModalTitle.Render("Switch Theme"))
-	b.WriteString("  ")
-	b.WriteString(styles.Muted.Render("#"))
 	b.WriteString("\n\n")
 
 	allThemes := styles.ListThemes()
@@ -490,6 +604,26 @@ func (m Model) renderThemeSwitcherOverlay(content string) string {
 
 	b.WriteString("\n")
 
+	// Scope selector (only shown if current project is in the project list)
+	if m.currentProjectConfig() != nil {
+		scopeGlobal := "Set globally"
+		scopeProject := "Set for this project"
+		if m.themeSwitcherScope == "project" {
+			b.WriteString(styles.Muted.Render("  scope: "))
+			b.WriteString(styles.Muted.Render(scopeGlobal))
+			b.WriteString(styles.Muted.Render(" | "))
+			b.WriteString(lipgloss.NewStyle().Foreground(styles.Primary).Bold(true).Render(scopeProject))
+		} else {
+			b.WriteString(styles.Muted.Render("  scope: "))
+			b.WriteString(lipgloss.NewStyle().Foreground(styles.Primary).Bold(true).Render(scopeGlobal))
+			b.WriteString(styles.Muted.Render(" | "))
+			b.WriteString(styles.Muted.Render(scopeProject))
+		}
+		b.WriteString("\n")
+		b.WriteString(styles.Subtle.Render("  (projects with own themes unaffected)"))
+		b.WriteString("\n\n")
+	}
+
 	// Help text
 	b.WriteString(styles.KeyHint.Render("enter"))
 	b.WriteString(styles.Muted.Render(" select  "))
@@ -497,6 +631,10 @@ func (m Model) renderThemeSwitcherOverlay(content string) string {
 	b.WriteString(styles.Muted.Render(" navigate  "))
 	b.WriteString(styles.KeyHint.Render("tab"))
 	b.WriteString(styles.Muted.Render(" community  "))
+	if m.currentProjectConfig() != nil {
+		b.WriteString(styles.KeyHint.Render("←/→"))
+		b.WriteString(styles.Muted.Render(" scope  "))
+	}
 	b.WriteString(styles.KeyHint.Render("esc"))
 	b.WriteString(styles.Muted.Render(" cancel"))
 
@@ -513,8 +651,6 @@ func (m Model) renderCommunityBrowserOverlay(content string) string {
 
 	// Title
 	b.WriteString(styles.ModalTitle.Render(fmt.Sprintf("Community Themes (%d)", len(allSchemes))))
-	b.WriteString("  ")
-	b.WriteString(styles.Muted.Render("tab"))
 	b.WriteString("\n\n")
 
 	// Search input
@@ -603,6 +739,26 @@ func (m Model) renderCommunityBrowserOverlay(content string) string {
 
 	b.WriteString("\n")
 
+	// Scope selector (shared with theme switcher)
+	if m.currentProjectConfig() != nil {
+		scopeGlobal := "Set globally"
+		scopeProject := "Set for this project"
+		if m.themeSwitcherScope == "project" {
+			b.WriteString(styles.Muted.Render("  scope: "))
+			b.WriteString(styles.Muted.Render(scopeGlobal))
+			b.WriteString(styles.Muted.Render(" | "))
+			b.WriteString(lipgloss.NewStyle().Foreground(styles.Primary).Bold(true).Render(scopeProject))
+		} else {
+			b.WriteString(styles.Muted.Render("  scope: "))
+			b.WriteString(lipgloss.NewStyle().Foreground(styles.Primary).Bold(true).Render(scopeGlobal))
+			b.WriteString(styles.Muted.Render(" | "))
+			b.WriteString(styles.Muted.Render(scopeProject))
+		}
+		b.WriteString("\n")
+		b.WriteString(styles.Subtle.Render("  (projects with own themes unaffected)"))
+		b.WriteString("\n\n")
+	}
+
 	// Help text
 	b.WriteString(styles.KeyHint.Render("enter"))
 	b.WriteString(styles.Muted.Render(" select  "))
@@ -610,6 +766,10 @@ func (m Model) renderCommunityBrowserOverlay(content string) string {
 	b.WriteString(styles.Muted.Render(" navigate  "))
 	b.WriteString(styles.KeyHint.Render("tab"))
 	b.WriteString(styles.Muted.Render(" built-in  "))
+	if m.currentProjectConfig() != nil {
+		b.WriteString(styles.KeyHint.Render("←/→"))
+		b.WriteString(styles.Muted.Render(" scope  "))
+	}
 	b.WriteString(styles.KeyHint.Render("esc"))
 	b.WriteString(styles.Muted.Render(" back"))
 

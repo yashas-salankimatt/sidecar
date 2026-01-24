@@ -346,6 +346,12 @@ styles.ApplyTheme("dracula")
 styles.ApplyThemeWithOverrides("default", map[string]string{
     "primary": "#FF5500",
 })
+
+// Resolve effective theme for a project path (priority: project > global > default)
+import "github.com/marcus/sidecar/internal/theme"
+
+resolved := theme.ResolveTheme(cfg, "/path/to/project")
+theme.ApplyResolved(resolved)
 ```
 
 ## Community Themes
@@ -359,7 +365,34 @@ Press `#` to open the theme switcher, then `Tab` to browse 453 community color s
 
 Community themes are automatically converted from iTerm2 color schemes. The converter maps ANSI colors to Sidecar's semantic palette and derives tab gradients from the most saturated colors in each scheme.
 
-Saved community themes are stored as overrides on the `default` base theme in `~/.config/sidecar/config.json`. To revert, select any built-in theme from the `#` switcher.
+Community themes are stored by scheme name in `~/.config/sidecar/config.json`. The full color palette is computed at runtime from the embedded scheme data:
+
+```json
+{
+  "ui": {
+    "theme": {
+      "name": "default",
+      "community": "Catppuccin Mocha"
+    }
+  }
+}
+```
+
+You can layer custom overrides on top of a community theme:
+
+```json
+{
+  "ui": {
+    "theme": {
+      "name": "default",
+      "community": "Catppuccin Mocha",
+      "overrides": { "primary": "#ff79c6" }
+    }
+  }
+}
+```
+
+To revert, select any built-in theme from the `#` switcher.
 
 ## Updating Community Themes
 
@@ -374,3 +407,41 @@ git clone https://github.com/mbadolato/iTerm2-Color-Schemes ~/code/iTerm2-Color-
 # Regenerate schemes.json (accepts optional path argument)
 ./scripts/generate-schemes.sh [path-to-repo]
 ```
+
+## Per-Project Themes
+
+Each project in your config can have its own theme. When you switch projects with `@`, the theme changes automatically.
+
+### Config format
+
+```json
+{
+  "projects": {
+    "list": [
+      { "name": "api", "path": "~/code/api", "theme": { "name": "dracula" } },
+      { "name": "web", "path": "~/code/web", "theme": { "name": "default", "community": "Catppuccin Mocha" } },
+      { "name": "tools", "path": "~/code/tools" }
+    ]
+  }
+}
+```
+
+Projects without a `theme` field use the global theme from `ui.theme`.
+
+### Setting a per-project theme
+
+1. Press `#` to open the theme switcher
+2. Press `ctrl+s` to toggle scope to "Set for this project"
+3. Select a theme — it saves to the project's config entry only
+
+The scope selector appears below the buttons when you're in a configured project. "Set globally" is the default and does not override projects that have their own theme.
+
+### Adding a project with a theme
+
+When adding a project via `ctrl+a` in the `@` switcher, the form includes a Theme field. Press `Enter` on it to open a mini theme picker where you can select a built-in or community theme. Projects default to "(use global)".
+
+### Theme priority
+
+Resolution order: project theme > global `ui.theme` > `"default"`.
+
+The `@` project switcher live-previews each project's theme as you navigate.

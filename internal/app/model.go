@@ -18,6 +18,7 @@ import (
 	"github.com/marcus/sidecar/internal/plugin"
 	"github.com/marcus/sidecar/internal/state"
 	"github.com/marcus/sidecar/internal/styles"
+	"github.com/marcus/sidecar/internal/theme"
 	"github.com/marcus/sidecar/internal/version"
 )
 
@@ -102,9 +103,21 @@ type Model struct {
 	projectAddMode        bool
 	projectAddNameInput   textinput.Model
 	projectAddPathInput   textinput.Model
-	projectAddFocus       int // 0=name, 1=path, 2=add button, 3=cancel button
+	projectAddFocus       int // 0=name, 1=path, 2=theme, 3=add button, 4=cancel button
 	projectAddButtonHover int // 0=none, 1=add, 2=cancel
 	projectAddError       string
+
+	// Theme picker within add-project flow
+	projectAddThemeMode       bool            // is theme picker sub-modal open?
+	projectAddThemeCursor     int
+	projectAddThemeScroll     int
+	projectAddThemeInput      textinput.Model
+	projectAddThemeFiltered   []string        // filtered built-in theme list
+	projectAddThemeSelected   string          // selected theme name (empty = use global)
+	projectAddCommunityMode   bool            // in community sub-browser?
+	projectAddCommunityList   []string        // filtered community scheme names
+	projectAddCommunityCursor int
+	projectAddCommunityScroll int
 
 	// Theme switcher modal
 	showThemeSwitcher          bool
@@ -115,6 +128,7 @@ type Model struct {
 	themeSwitcherFiltered      []string
 	themeSwitcherOriginal      string // original theme to restore on cancel
 	themeSwitcherCommunityName string
+	themeSwitcherScope         string // "global" or "project"
 
 	// Community theme browser (sub-mode of theme switcher)
 	showCommunityBrowser     bool
@@ -426,6 +440,9 @@ func (m *Model) resetProjectSwitcher() {
 	m.projectSwitcherScroll = 0
 	m.projectSwitcherHover = -1
 	m.projectSwitcherFiltered = nil
+	// Restore current project's theme (undo any live preview)
+	resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)
+	theme.ApplyResolved(resolved)
 }
 
 // initProjectSwitcher initializes the project switcher modal.
@@ -448,6 +465,8 @@ func (m *Model) initProjectSwitcher() {
 			break
 		}
 	}
+	// Preview the initially-selected project's theme
+	m.previewProjectTheme()
 }
 
 // filterProjects filters projects by name or path using a case-insensitive substring match.
@@ -497,6 +516,10 @@ func (m *Model) switchProject(projectPath string) tea.Cmd {
 	m.ui.WorkDir = projectPath
 	m.intro.RepoName = GetRepoName(projectPath)
 
+	// Apply project-specific theme (or global fallback)
+	resolved := theme.ResolveTheme(m.cfg, projectPath)
+	theme.ApplyResolved(resolved)
+
 	// Reinitialize all plugins with the new working directory
 	// This stops all plugins, updates the context, and starts them again
 	startCmds := m.registry.Reinit(projectPath)
@@ -517,6 +540,33 @@ func (m *Model) switchProject(projectPath string) tea.Cmd {
 			}
 		},
 	)
+}
+
+// previewProjectTheme applies the theme for the currently selected project in the switcher.
+func (m *Model) previewProjectTheme() {
+	projects := m.projectSwitcherFiltered
+	if m.projectSwitcherCursor >= 0 && m.projectSwitcherCursor < len(projects) {
+		resolved := theme.ResolveTheme(m.cfg, projects[m.projectSwitcherCursor].Path)
+		theme.ApplyResolved(resolved)
+	}
+}
+
+// currentProjectConfig returns the ProjectConfig for the current workdir, or nil.
+func (m *Model) currentProjectConfig() *config.ProjectConfig {
+	for i := range m.cfg.Projects.List {
+		if m.cfg.Projects.List[i].Path == m.ui.WorkDir {
+			return &m.cfg.Projects.List[i]
+		}
+	}
+	return nil
+}
+
+// saveThemeForScope saves a ThemeConfig based on the current scope setting.
+func (m *Model) saveThemeForScope(tc config.ThemeConfig) error {
+	if m.themeSwitcherScope == "project" {
+		return config.SaveProjectTheme(m.ui.WorkDir, &tc)
+	}
+	return config.SaveGlobalTheme(tc)
 }
 
 // copyProjectSetupPrompt copies an LLM-friendly prompt for configuring projects.
@@ -578,6 +628,54 @@ func (m *Model) resetProjectAdd() {
 	m.projectAddError = ""
 	m.projectAddFocus = 0
 	m.projectAddButtonHover = 0
+	m.projectAddThemeSelected = ""
+	m.resetProjectAddThemePicker()
+}
+
+// initProjectAddThemePicker opens the theme picker sub-modal.
+func (m *Model) initProjectAddThemePicker() {
+	m.projectAddThemeMode = true
+	ti := textinput.New()
+	ti.Placeholder = "Filter themes..."
+	ti.Focus()
+	ti.CharLimit = 50
+	ti.Width = 36
+	m.projectAddThemeInput = ti
+	m.projectAddThemeFiltered = append([]string{"(use global)"}, styles.ListThemes()...)
+	m.projectAddThemeCursor = 0
+	m.projectAddThemeScroll = 0
+	m.projectAddCommunityMode = false
+}
+
+// resetProjectAddThemePicker closes the theme picker sub-modal.
+func (m *Model) resetProjectAddThemePicker() {
+	m.projectAddThemeMode = false
+	m.projectAddCommunityMode = false
+	m.projectAddThemeCursor = 0
+	m.projectAddThemeScroll = 0
+	m.projectAddCommunityCursor = 0
+	m.projectAddCommunityScroll = 0
+}
+
+// previewProjectAddTheme previews the currently-selected built-in theme.
+func (m *Model) previewProjectAddTheme() {
+	if m.projectAddThemeCursor >= 0 && m.projectAddThemeCursor < len(m.projectAddThemeFiltered) {
+		name := m.projectAddThemeFiltered[m.projectAddThemeCursor]
+		if name == "(use global)" {
+			resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)
+			theme.ApplyResolved(resolved)
+		} else {
+			theme.ApplyResolved(theme.ResolvedTheme{BaseName: name})
+		}
+	}
+}
+
+// previewProjectAddCommunity previews the currently-selected community theme.
+func (m *Model) previewProjectAddCommunity() {
+	if m.projectAddCommunityCursor >= 0 && m.projectAddCommunityCursor < len(m.projectAddCommunityList) {
+		name := m.projectAddCommunityList[m.projectAddCommunityCursor]
+		theme.ApplyResolved(theme.ResolvedTheme{BaseName: "default", CommunityName: name})
+	}
 }
 
 // validateProjectAdd validates the project add form inputs.
@@ -626,11 +724,28 @@ func (m *Model) saveProjectAdd() tea.Cmd {
 	name := strings.TrimSpace(m.projectAddNameInput.Value())
 	path := strings.TrimSpace(m.projectAddPathInput.Value())
 
-	// Add to in-memory config
-	m.cfg.Projects.List = append(m.cfg.Projects.List, config.ProjectConfig{
+	// Build project config
+	proj := config.ProjectConfig{
 		Name: name,
 		Path: config.ExpandPath(path),
-	})
+	}
+
+	// Add theme if user selected one
+	if m.projectAddThemeSelected != "" && m.projectAddThemeSelected != "(use global)" {
+		if community.GetScheme(m.projectAddThemeSelected) != nil {
+			proj.Theme = &config.ThemeConfig{
+				Name:      "default",
+				Community: m.projectAddThemeSelected,
+			}
+		} else {
+			proj.Theme = &config.ThemeConfig{
+				Name: m.projectAddThemeSelected,
+			}
+		}
+	}
+
+	// Add to in-memory config
+	m.cfg.Projects.List = append(m.cfg.Projects.List, proj)
 
 	// Save to disk
 	if err := config.Save(m.cfg); err != nil {
@@ -654,6 +769,7 @@ func (m *Model) resetThemeSwitcher() {
 	m.themeSwitcherScroll = 0
 	m.themeSwitcherHover = -1
 	m.themeSwitcherFiltered = nil
+	m.themeSwitcherScope = ""
 	m.themeSwitcherOriginal = ""
 	m.themeSwitcherCommunityName = ""
 }
@@ -674,12 +790,13 @@ func (m *Model) initThemeSwitcher() {
 	m.themeSwitcherHover = -1
 	m.themeSwitcherOriginal = styles.GetCurrentThemeName()
 	m.themeSwitcherCommunityName = ""
+	m.themeSwitcherScope = "global" // default scope
 
 	if freshCfg, err := config.Load(); err == nil {
 		if freshCfg.UI.Theme.Name != "" {
 			m.themeSwitcherOriginal = freshCfg.UI.Theme.Name
 		}
-		m.themeSwitcherCommunityName = communityNameFromOverrides(freshCfg.UI.Theme.Overrides)
+		m.themeSwitcherCommunityName = freshCfg.UI.Theme.Community
 	}
 
 	// Set cursor to current theme if found
@@ -763,18 +880,6 @@ func filterCommunitySchemes(all []string, query string) []string {
 	return matches
 }
 
-func communityNameFromOverrides(overrides map[string]interface{}) string {
-	if overrides == nil {
-		return ""
-	}
-	if value, ok := overrides["communityName"]; ok {
-		if name, ok := value.(string); ok {
-			return name
-		}
-	}
-	return ""
-}
-
 func (m *Model) selectCommunityScheme(name string) {
 	if name == "" {
 		return
@@ -796,7 +901,12 @@ func (m *Model) selectCommunityScheme(name string) {
 func (m *Model) applyThemeFromConfig(themeName string) {
 	freshCfg, err := config.Load()
 	if err == nil && freshCfg.UI.Theme.Name == themeName {
-		styles.ApplyThemeWithGenericOverrides(themeName, freshCfg.UI.Theme.Overrides)
+		// Apply the saved theme with its full config (community + overrides)
+		theme.ApplyResolved(theme.ResolvedTheme{
+			BaseName:      themeName,
+			CommunityName: freshCfg.UI.Theme.Community,
+			Overrides:     freshCfg.UI.Theme.Overrides,
+		})
 	} else {
 		styles.ApplyTheme(themeName)
 	}

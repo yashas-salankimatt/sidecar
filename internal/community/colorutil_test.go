@@ -175,3 +175,44 @@ func TestColorDistance(t *testing.T) {
 		t.Errorf("ColorDistance black-white = %f, want ~441.67", d)
 	}
 }
+
+func TestContrastRatio(t *testing.T) {
+	// White on black = 21:1
+	ratio := ContrastRatio("#ffffff", "#000000")
+	if math.Abs(ratio-21.0) > 0.01 {
+		t.Errorf("white/black ratio = %f, want 21.0", ratio)
+	}
+	// Same color = 1:1
+	ratio = ContrastRatio("#808080", "#808080")
+	if math.Abs(ratio-1.0) > 0.01 {
+		t.Errorf("same color ratio = %f, want 1.0", ratio)
+	}
+	// Order shouldn't matter
+	r1 := ContrastRatio("#ffffff", "#333333")
+	r2 := ContrastRatio("#333333", "#ffffff")
+	if math.Abs(r1-r2) > 0.001 {
+		t.Errorf("ratio not symmetric: %f vs %f", r1, r2)
+	}
+}
+
+func TestEnsureContrast(t *testing.T) {
+	// Already sufficient contrast - returns original
+	result := EnsureContrast("#ffffff", "#000000", 3.0)
+	if result != "#ffffff" {
+		t.Errorf("already sufficient: got %s, want #ffffff", result)
+	}
+
+	// Dark grey on dark background - should lighten
+	result = EnsureContrast("#333333", "#1a1a1a", 3.0)
+	ratio := ContrastRatio(result, "#1a1a1a")
+	if ratio < 3.0 {
+		t.Errorf("dark bg: ratio %f < 3.0 (result=%s)", ratio, result)
+	}
+
+	// Light grey on light background - should darken
+	result = EnsureContrast("#cccccc", "#ffffff", 3.0)
+	ratio = ContrastRatio(result, "#ffffff")
+	if ratio < 3.0 {
+		t.Errorf("light bg: ratio %f < 3.0 (result=%s)", ratio, result)
+	}
+}

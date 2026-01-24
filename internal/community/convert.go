@@ -21,6 +21,29 @@ func Convert(scheme *CommunityScheme) styles.ColorPalette {
 		bgTertiary = adjustBg(bg, 0.16, isDark)
 	}
 
+	// Compute muted text colors with contrast enforcement
+	textMuted := EnsureContrast(scheme.BrightBlack, bg, 3.0)
+	textSubtle := EnsureContrast(Blend(scheme.BrightBlack, bg, 0.30), bg, 2.5)
+	tabTextInactive := EnsureContrast(scheme.BrightBlack, bg, 3.0)
+
+	// Ensure primary/secondary text has sufficient contrast against the main background.
+	textPrimary := EnsureContrast(fg, bg, 4.5)
+	textSecondary := EnsureContrast(Blend(fg, bg, 0.25), bg, 3.5)
+
+	// Improve contrast on tertiary backgrounds if we can keep main background contrast.
+	if ContrastRatio(textPrimary, bgTertiary) < 4.5 {
+		adjusted := EnsureContrast(textPrimary, bgTertiary, 4.5)
+		if ContrastRatio(adjusted, bg) >= 4.5 {
+			textPrimary = adjusted
+		}
+	}
+	if ContrastRatio(textSecondary, bgTertiary) < 3.5 {
+		adjusted := EnsureContrast(textSecondary, bgTertiary, 3.5)
+		if ContrastRatio(adjusted, bg) >= 3.5 {
+			textSecondary = adjusted
+		}
+	}
+
 	return styles.ColorPalette{
 		Primary:   scheme.Blue,
 		Secondary: scheme.Cyan,
@@ -31,10 +54,10 @@ func Convert(scheme *CommunityScheme) styles.ColorPalette {
 		Error:   scheme.Red,
 		Info:    scheme.Cyan,
 
-		TextPrimary:   fg,
-		TextSecondary: Blend(fg, bg, 0.25),
-		TextMuted:     scheme.BrightBlack,
-		TextSubtle:    Blend(scheme.BrightBlack, bg, 0.30),
+		TextPrimary:   textPrimary,
+		TextSecondary: textSecondary,
+		TextMuted:     textMuted,
+		TextSubtle:    textSubtle,
 		TextHighlight: scheme.BrightWhite,
 
 		BgPrimary:   bg,
@@ -59,7 +82,7 @@ func Convert(scheme *CommunityScheme) styles.ColorPalette {
 		DiffRemoveBg: Blend(bg, scheme.Red, 0.15),
 
 		ButtonHover:      scheme.Purple,
-		TabTextInactive:  scheme.BrightBlack,
+		TabTextInactive:  tabTextInactive,
 		Link:             scheme.BrightBlue,
 		ToastSuccessText: contrastText(scheme.Green),
 		ToastErrorText:   contrastText(scheme.Red),

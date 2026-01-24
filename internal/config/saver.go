@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -115,7 +116,8 @@ func SaveTheme(themeName string) error {
 		return err
 	}
 	cfg.UI.Theme.Name = themeName
-	cfg.UI.Theme.Overrides = make(map[string]interface{})
+	cfg.UI.Theme.Community = ""
+	cfg.UI.Theme.Overrides = nil
 	return Save(cfg)
 }
 
@@ -126,6 +128,45 @@ func SaveThemeWithOverrides(themeName string, overrides map[string]interface{}) 
 		return err
 	}
 	cfg.UI.Theme.Name = themeName
+	cfg.UI.Theme.Community = ""
 	cfg.UI.Theme.Overrides = overrides
+	return Save(cfg)
+}
+
+// SaveCommunityTheme saves a community theme reference with optional user overrides.
+// Only the scheme name is stored — the full palette is computed at runtime.
+func SaveCommunityTheme(communityName string, userOverrides map[string]interface{}) error {
+	cfg, err := Load()
+	if err != nil {
+		return err
+	}
+	cfg.UI.Theme.Name = "default"
+	cfg.UI.Theme.Community = communityName
+	cfg.UI.Theme.Overrides = userOverrides
+	return Save(cfg)
+}
+
+// SaveProjectTheme updates a specific project's theme in config and saves.
+func SaveProjectTheme(projectPath string, theme *ThemeConfig) error {
+	cfg, err := Load()
+	if err != nil {
+		return err
+	}
+	for i, proj := range cfg.Projects.List {
+		if proj.Path == projectPath {
+			cfg.Projects.List[i].Theme = theme
+			return Save(cfg)
+		}
+	}
+	return fmt.Errorf("project not found: %s", projectPath)
+}
+
+// SaveGlobalTheme saves a ThemeConfig as the global UI theme.
+func SaveGlobalTheme(tc ThemeConfig) error {
+	cfg, err := Load()
+	if err != nil {
+		return err
+	}
+	cfg.UI.Theme = tc
 	return Save(cfg)
 }
