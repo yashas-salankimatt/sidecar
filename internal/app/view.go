@@ -120,6 +120,11 @@ func (m Model) renderQuitConfirmOverlay(content string) string {
 
 // renderProjectSwitcherOverlay renders the project switcher modal.
 func (m Model) renderProjectSwitcherOverlay(content string) string {
+	// Render add form if in add mode
+	if m.projectAddMode {
+		return m.renderProjectAddOverlay(content)
+	}
+
 	var b strings.Builder
 
 	// Title
@@ -153,6 +158,8 @@ func (m Model) renderProjectSwitcherOverlay(content string) string {
 }`
 		b.WriteString(styles.Subtle.Render(configExample))
 		b.WriteString("\n\n")
+		b.WriteString(styles.KeyHint.Render("ctrl+a"))
+		b.WriteString(styles.Muted.Render(" add project  "))
 		b.WriteString(styles.KeyHint.Render("esc"))
 		b.WriteString(styles.Muted.Render(" close"))
 
@@ -272,8 +279,89 @@ func (m Model) renderProjectSwitcherOverlay(content string) string {
 	b.WriteString(styles.Muted.Render(" select  "))
 	b.WriteString(styles.KeyHint.Render("↑/↓"))
 	b.WriteString(styles.Muted.Render(" navigate  "))
+	b.WriteString(styles.KeyHint.Render("ctrl+a"))
+	b.WriteString(styles.Muted.Render(" add  "))
 	b.WriteString(styles.KeyHint.Render("esc"))
 	b.WriteString(styles.Muted.Render(" cancel  "))
+
+	modal := styles.ModalBox.Render(b.String())
+	return ui.OverlayModal(content, modal, m.width, m.height)
+}
+
+// renderProjectAddOverlay renders the project add form as a sub-mode.
+func (m Model) renderProjectAddOverlay(content string) string {
+	var b strings.Builder
+
+	b.WriteString(styles.ModalTitle.Render("Add Project"))
+	b.WriteString("\n\n")
+
+	// Input field styles
+	inputStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(styles.TextMuted).
+		Padding(0, 1)
+	inputFocusedStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(styles.Primary).
+		Padding(0, 1)
+
+	// Name field
+	nameLabel := "Name:"
+	nameStyle := inputStyle
+	if m.projectAddFocus == 0 {
+		nameStyle = inputFocusedStyle
+	}
+	b.WriteString(nameLabel)
+	b.WriteString("\n")
+	b.WriteString(nameStyle.Render(m.projectAddNameInput.View()))
+	b.WriteString("\n\n")
+
+	// Path field
+	pathLabel := "Path:"
+	pathStyle := inputStyle
+	if m.projectAddFocus == 1 {
+		pathStyle = inputFocusedStyle
+	}
+	b.WriteString(pathLabel)
+	b.WriteString("\n")
+	b.WriteString(pathStyle.Render(m.projectAddPathInput.View()))
+	b.WriteString("\n")
+
+	// Error message
+	if m.projectAddError != "" {
+		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+		b.WriteString("\n")
+		b.WriteString(errStyle.Render(m.projectAddError))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+
+	// Buttons
+	addBtnStyle := styles.Button
+	cancelBtnStyle := styles.Button
+	if m.projectAddFocus == 2 {
+		addBtnStyle = styles.ButtonFocused
+	} else if m.projectAddButtonHover == 1 {
+		addBtnStyle = styles.ButtonHover
+	}
+	if m.projectAddFocus == 3 {
+		cancelBtnStyle = styles.ButtonFocused
+	} else if m.projectAddButtonHover == 2 {
+		cancelBtnStyle = styles.ButtonHover
+	}
+	b.WriteString(addBtnStyle.Render(" Add "))
+	b.WriteString("  ")
+	b.WriteString(cancelBtnStyle.Render(" Cancel "))
+	b.WriteString("\n\n")
+
+	// Help text
+	b.WriteString(styles.KeyHint.Render("tab"))
+	b.WriteString(styles.Muted.Render(" next  "))
+	b.WriteString(styles.KeyHint.Render("enter"))
+	b.WriteString(styles.Muted.Render(" confirm  "))
+	b.WriteString(styles.KeyHint.Render("esc"))
+	b.WriteString(styles.Muted.Render(" back"))
 
 	modal := styles.ModalBox.Render(b.String())
 	return ui.OverlayModal(content, modal, m.width, m.height)

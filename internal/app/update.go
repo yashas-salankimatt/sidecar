@@ -77,6 +77,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ModalQuitConfirm:
 			return m.handleQuitConfirmMouse(msg)
 		case ModalProjectSwitcher:
+			if m.projectAddMode {
+				return m.handleProjectAddMouse(msg)
+			}
 			return m.handleProjectSwitcherMouse(msg)
 		case ModalThemeSwitcher:
 			return m.handleThemeSwitcherMouse(msg)
@@ -289,6 +292,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showQuitConfirm = false
 			return m, nil
 		case ModalProjectSwitcher:
+			// If in add mode, Esc exits back to list
+			if m.projectAddMode {
+				m.resetProjectAdd()
+				return m, nil
+			}
 			// Esc: clear filter if set, otherwise close
 			if m.projectSwitcherInput.Value() != "" {
 				m.projectSwitcherInput.SetValue("")
@@ -458,12 +466,20 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Handle project switcher modal keys (Esc handled above)
 	if m.showProjectSwitcher {
+		// Handle project add sub-mode keys
+		if m.projectAddMode {
+			return m.handleProjectAddKeys(msg)
+		}
+
 		allProjects := m.cfg.Projects.List
 		if len(allProjects) == 0 {
-			// No projects configured - handle y for LLM prompt, close on q/@
+			// No projects configured - handle y for LLM prompt, ctrl+a for add, close on q/@
 			switch msg.String() {
 			case "y":
 				return m, m.copyProjectSetupPrompt()
+			case "ctrl+a":
+				m.initProjectAdd()
+				return m, nil
 			case "q", "@":
 				m.resetProjectSwitcher()
 				m.updateContext()
@@ -523,6 +539,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.projectSwitcherCursor = 0
 			}
 			m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(m.projectSwitcherCursor, m.projectSwitcherScroll, 8)
+			return m, nil
+
+		case "ctrl+a":
+			m.initProjectAdd()
 			return m, nil
 
 		case "@":
@@ -1215,6 +1235,142 @@ func (m Model) handleQuitConfirmMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Clear hover when outside modal
 	if msg.Action == tea.MouseActionMotion {
 		m.quitButtonHover = 0
+	}
+
+	return m, nil
+}
+
+// handleProjectAddKeys handles keyboard input for the project add sub-mode.
+// Focus: 0=name, 1=path, 2=add button, 3=cancel button
+func (m Model) handleProjectAddKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "tab":
+		m.blurProjectAddInputs()
+		m.projectAddFocus = (m.projectAddFocus + 1) % 4
+		m.focusProjectAddInput()
+		return m, nil
+
+	case "shift+tab":
+		m.blurProjectAddInputs()
+		m.projectAddFocus = (m.projectAddFocus + 3) % 4
+		m.focusProjectAddInput()
+		return m, nil
+
+	case "enter":
+		switch m.projectAddFocus {
+		case 2: // Add button
+			if errMsg := m.validateProjectAdd(); errMsg != "" {
+				m.projectAddError = errMsg
+				return m, nil
+			}
+			cmd := m.saveProjectAdd()
+			m.resetProjectAdd()
+			return m, cmd
+		case 3: // Cancel button
+			m.resetProjectAdd()
+			return m, nil
+		}
+	}
+
+	// Forward to focused textinput
+	m.projectAddError = "" // Clear error on typing
+	var cmd tea.Cmd
+	switch m.projectAddFocus {
+	case 0:
+		m.projectAddNameInput, cmd = m.projectAddNameInput.Update(msg)
+	case 1:
+		m.projectAddPathInput, cmd = m.projectAddPathInput.Update(msg)
+	}
+	return m, cmd
+}
+
+// blurProjectAddInputs blurs all project add textinputs.
+func (m *Model) blurProjectAddInputs() {
+	m.projectAddNameInput.Blur()
+	m.projectAddPathInput.Blur()
+}
+
+// focusProjectAddInput focuses the appropriate textinput based on projectAddFocus.
+func (m *Model) focusProjectAddInput() {
+	switch m.projectAddFocus {
+	case 0:
+		m.projectAddNameInput.Focus()
+	case 1:
+		m.projectAddPathInput.Focus()
+	}
+}
+
+// handleProjectAddMouse handles mouse events for the project add sub-mode.
+func (m Model) handleProjectAddMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Calculate modal dimensions (same approach as project switcher)
+	// Add form: title(2) + name label(1) + name input(1) + gap(1) + path label(1) + path input(1) + gap(1) + error?(1) + buttons(1) = ~10-11 lines
+	modalContentLines := 11
+	if m.projectAddError != "" {
+		modalContentLines++
+	}
+	modalHeight := modalContentLines + 4 // ModalBox padding/border
+	modalWidth := 50
+
+	modalX := (m.width - modalWidth) / 2
+	modalY := (m.height - modalHeight) / 2
+
+	// Check if click is inside modal
+	if msg.X >= modalX && msg.X < modalX+modalWidth &&
+		msg.Y >= modalY && msg.Y < modalY+modalHeight {
+
+		// Calculate button positions (at bottom of modal content)
+		// Buttons are on the last content line before bottom border/padding
+		buttonLineY := modalY + 2 + modalContentLines - 2 // border/padding + content - buttons offset
+
+		if msg.Y == buttonLineY {
+			// Rough button X positions within the modal
+			addBtnStart := modalX + 3  // border + padding + small indent
+			addBtnEnd := addBtnStart + 7 // " Add " width
+			cancelBtnStart := addBtnEnd + 3
+			cancelBtnEnd := cancelBtnStart + 10 // " Cancel " width
+
+			switch msg.Action {
+			case tea.MouseActionPress:
+				if msg.Button == tea.MouseButtonLeft {
+					if msg.X >= addBtnStart && msg.X < addBtnEnd {
+						// Click Add
+						if errMsg := m.validateProjectAdd(); errMsg != "" {
+							m.projectAddError = errMsg
+							return m, nil
+						}
+						cmd := m.saveProjectAdd()
+						m.resetProjectAdd()
+						return m, cmd
+					}
+					if msg.X >= cancelBtnStart && msg.X < cancelBtnEnd {
+						// Click Cancel
+						m.resetProjectAdd()
+						return m, nil
+					}
+				}
+			case tea.MouseActionMotion:
+				m.projectAddButtonHover = 0
+				if msg.X >= addBtnStart && msg.X < addBtnEnd {
+					m.projectAddButtonHover = 1
+				} else if msg.X >= cancelBtnStart && msg.X < cancelBtnEnd {
+					m.projectAddButtonHover = 2
+				}
+			}
+		} else if msg.Action == tea.MouseActionMotion {
+			m.projectAddButtonHover = 0
+		}
+
+		return m, nil
+	}
+
+	// Click outside modal - cancel add mode
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		m.resetProjectAdd()
+		return m, nil
+	}
+
+	if msg.Action == tea.MouseActionMotion {
+		m.projectAddButtonHover = 0
 	}
 
 	return m, nil

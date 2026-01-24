@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -95,6 +96,14 @@ type Model struct {
 	projectSwitcherHover    int // -1 = no hover, 0+ = hovered project index
 	projectSwitcherInput    textinput.Model
 	projectSwitcherFiltered []config.ProjectConfig
+
+	// Project add sub-mode (within project switcher)
+	projectAddMode        bool
+	projectAddNameInput   textinput.Model
+	projectAddPathInput   textinput.Model
+	projectAddFocus       int // 0=name, 1=path, 2=add button, 3=cancel button
+	projectAddButtonHover int // 0=none, 1=add, 2=cancel
+	projectAddError       string
 
 	// Theme switcher modal
 	showThemeSwitcher     bool
@@ -527,6 +536,102 @@ My code is located at: [TELL ME WHERE YOUR CODE DIRECTORIES ARE]`
 	}
 	return func() tea.Msg {
 		return ToastMsg{Message: "Copied LLM setup prompt", Duration: 2 * time.Second}
+	}
+}
+
+// initProjectAdd initializes the project add sub-mode.
+func (m *Model) initProjectAdd() {
+	m.projectAddMode = true
+	m.projectAddError = ""
+	m.projectAddFocus = 0
+	m.projectAddButtonHover = 0
+
+	nameInput := textinput.New()
+	nameInput.Placeholder = "project-name"
+	nameInput.CharLimit = 40
+	nameInput.Width = 36
+	nameInput.Focus()
+	m.projectAddNameInput = nameInput
+
+	pathInput := textinput.New()
+	pathInput.Placeholder = "~/code/project-path"
+	pathInput.CharLimit = 200
+	pathInput.Width = 36
+	m.projectAddPathInput = pathInput
+}
+
+// resetProjectAdd resets the project add sub-mode state.
+func (m *Model) resetProjectAdd() {
+	m.projectAddMode = false
+	m.projectAddError = ""
+	m.projectAddFocus = 0
+	m.projectAddButtonHover = 0
+}
+
+// validateProjectAdd validates the project add form inputs.
+// Returns an error message or empty string if valid.
+func (m *Model) validateProjectAdd() string {
+	name := strings.TrimSpace(m.projectAddNameInput.Value())
+	path := strings.TrimSpace(m.projectAddPathInput.Value())
+
+	if name == "" {
+		return "Name is required"
+	}
+	if path == "" {
+		return "Path is required"
+	}
+
+	// Expand path for validation
+	expanded := config.ExpandPath(path)
+
+	// Check path exists and is a directory
+	info, err := os.Stat(expanded)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "Path does not exist"
+		}
+		return "Cannot access path"
+	}
+	if !info.IsDir() {
+		return "Path is not a directory"
+	}
+
+	// Check for duplicate name or path
+	for _, proj := range m.cfg.Projects.List {
+		if strings.EqualFold(proj.Name, name) {
+			return "Project name already exists"
+		}
+		if proj.Path == expanded {
+			return "Project path already configured"
+		}
+	}
+
+	return ""
+}
+
+// saveProjectAdd saves the new project to config and refreshes the list.
+func (m *Model) saveProjectAdd() tea.Cmd {
+	name := strings.TrimSpace(m.projectAddNameInput.Value())
+	path := strings.TrimSpace(m.projectAddPathInput.Value())
+
+	// Add to in-memory config
+	m.cfg.Projects.List = append(m.cfg.Projects.List, config.ProjectConfig{
+		Name: name,
+		Path: config.ExpandPath(path),
+	})
+
+	// Save to disk
+	if err := config.Save(m.cfg); err != nil {
+		return func() tea.Msg {
+			return ToastMsg{Message: "Added project (save failed: " + err.Error() + ")", Duration: 3 * time.Second, IsError: true}
+		}
+	}
+
+	// Refresh the filtered list
+	m.projectSwitcherFiltered = m.cfg.Projects.List
+
+	return func() tea.Msg {
+		return ToastMsg{Message: fmt.Sprintf("Added project: %s", name), Duration: 3 * time.Second}
 	}
 }
 

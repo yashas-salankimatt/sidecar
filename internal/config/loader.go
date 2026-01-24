@@ -101,11 +101,11 @@ func LoadFrom(path string) (*Config, error) {
 	mergeConfig(cfg, &raw)
 
 	// Expand paths
-	cfg.Plugins.Conversations.ClaudeDataDir = expandPath(cfg.Plugins.Conversations.ClaudeDataDir)
+	cfg.Plugins.Conversations.ClaudeDataDir = ExpandPath(cfg.Plugins.Conversations.ClaudeDataDir)
 
 	// Expand paths in project list and warn if path doesn't exist
 	for i := range cfg.Projects.List {
-		cfg.Projects.List[i].Path = expandPath(cfg.Projects.List[i].Path)
+		cfg.Projects.List[i].Path = ExpandPath(cfg.Projects.List[i].Path)
 		if _, err := os.Stat(cfg.Projects.List[i].Path); os.IsNotExist(err) {
 			slog.Warn("project path not found", "name", cfg.Projects.List[i].Name, "path", cfg.Projects.List[i].Path)
 		}
@@ -216,8 +216,8 @@ func mergeConfig(cfg *Config, raw *rawConfig) {
 	}
 }
 
-// expandPath expands ~ to home directory.
-func expandPath(path string) string {
+// ExpandPath expands ~ to home directory.
+func ExpandPath(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
