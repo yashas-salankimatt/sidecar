@@ -13,10 +13,9 @@ const (
 	regionPaneDivider  = "pane-divider"
 	regionFile         = "file"
 	regionCommit       = "commit"
-	regionCommitFile   = "commit-file"    // Files in commit preview pane
-	regionDiffModal    = "diff-modal"     // Full-screen diff view
-	regionPushMenuItem = "push-menu-item" // Push menu item
-	regionCommitButton = "commit-button"  // Commit modal button
+	regionCommitFile   = "commit-file"   // Files in commit preview pane
+	regionDiffModal    = "diff-modal"    // Full-screen diff view
+	regionCommitButton = "commit-button" // Commit modal button
 )
 
 // handleMouse processes mouse events in the status view.
@@ -430,6 +429,33 @@ func (p *Plugin) handlePullMenuMouse(msg tea.MouseMsg) (*Plugin, tea.Cmd) {
 	case pullMenuOptionMerge, pullMenuOptionRebase, pullMenuOptionFFOnly, pullMenuOptionAutostash:
 		plug, cmd := p.executePullMenuAction(action)
 		return plug.(*Plugin), cmd
+	}
+	return p, nil
+}
+
+// handlePushMenuMouse processes mouse events in the push menu modal.
+func (p *Plugin) handlePushMenuMouse(msg tea.MouseMsg) (*Plugin, tea.Cmd) {
+	p.ensurePushMenuModal()
+	if p.pushMenuModal == nil {
+		return p, nil
+	}
+
+	action := p.pushMenuModal.HandleMouse(msg, p.mouseHandler)
+	switch action {
+	case pushMenuOptionPush:
+		plug, cmd := p.executePushMenuAction(0)
+		return plug.(*Plugin), cmd
+	case pushMenuOptionForce:
+		plug, cmd := p.executePushMenuAction(1)
+		return plug.(*Plugin), cmd
+	case pushMenuOptionUpstream:
+		plug, cmd := p.executePushMenuAction(2)
+		return plug.(*Plugin), cmd
+	case "cancel":
+		p.viewMode = p.pushMenuReturnMode
+		p.clearPushMenuModal()
+		p.pushMenuFocus = 0
+		return p, nil
 	}
 	return p, nil
 }

@@ -256,6 +256,8 @@ func (p *Plugin) updateStatus(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 		if p.canPush() && !p.pushInProgress {
 			p.pushMenuReturnMode = p.viewMode
 			p.viewMode = ViewModePushMenu
+			p.pushMenuFocus = 0
+			p.clearPushMenuModal()
 		}
 
 	case "y":
@@ -741,32 +743,47 @@ func (p *Plugin) tryCommit() tea.Cmd {
 
 // updatePushMenu handles key events in the push menu.
 func (p *Plugin) updatePushMenu(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
-	const itemCount = 3 // push, force, upstream
+	p.ensurePushMenuModal()
+	if p.pushMenuModal == nil {
+		return p, nil
+	}
 
+	// Direct-execution shortcuts
 	switch msg.String() {
-	case "tab", "j", "down":
-		p.pushMenuFocus = (p.pushMenuFocus + 1) % itemCount
-		return p, nil
-	case "shift+tab", "k", "up":
-		p.pushMenuFocus = (p.pushMenuFocus - 1 + itemCount) % itemCount
-		return p, nil
-	case "enter":
-		return p.executePushMenuAction(p.pushMenuFocus)
-	case "esc", "q":
-		p.viewMode = p.pushMenuReturnMode
-		p.pushMenuFocus = 0
-		return p, nil
 	case "p":
-		// Regular push (shortcut)
 		return p.executePushMenuAction(0)
 	case "f":
-		// Force push (shortcut)
 		return p.executePushMenuAction(1)
 	case "u":
-		// Push and set upstream (shortcut)
 		return p.executePushMenuAction(2)
 	}
-	return p, nil
+
+	switch msg.String() {
+	case "esc", "q":
+		p.viewMode = p.pushMenuReturnMode
+		p.clearPushMenuModal()
+		p.pushMenuFocus = 0
+		return p, nil
+	}
+
+	action, cmd := p.pushMenuModal.HandleKey(msg)
+	switch action {
+	case "cancel":
+		p.viewMode = p.pushMenuReturnMode
+		p.clearPushMenuModal()
+		p.pushMenuFocus = 0
+		return p, nil
+	case pushMenuOptionPush:
+		return p.executePushMenuAction(0)
+	case pushMenuOptionForce:
+		return p.executePushMenuAction(1)
+	case pushMenuOptionUpstream:
+		return p.executePushMenuAction(2)
+	case pushMenuActionID:
+		return p.executePushMenuAction(p.pushMenuFocus)
+	}
+
+	return p, cmd
 }
 
 // updatePullMenu handles key events in the pull menu.
@@ -889,6 +906,7 @@ func (p *Plugin) executePushMenuAction(idx int) (plugin.Plugin, tea.Cmd) {
 	p.pushError = ""
 	p.pushSuccess = false
 	p.pushMenuFocus = 0
+	p.clearPushMenuModal()
 
 	// Preserve selected commit hash before push to restore cursor after refresh
 	p.pushPreservedCommitHash = ""

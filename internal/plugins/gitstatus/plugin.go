@@ -107,8 +107,9 @@ type Plugin struct {
 	pushSuccessTime         time.Time // When to auto-clear success
 	pushMenuReturnMode      ViewMode  // Mode to return to when push menu closes
 	pushMenuFocus           int       // 0=push, 1=force, 2=upstream
-	pushMenuHover           int       // -1=none, 0=push, 1=force, 2=upstream
-	pushPreservedCommitHash string    // Hash of selected commit when push started
+	pushMenuModal           *modal.Modal
+	pushMenuModalWidth      int
+	pushPreservedCommitHash string // Hash of selected commit when push started
 
 	// Pull menu state
 	pullMenuReturnMode ViewMode     // Mode to return to when pull menu closes
@@ -320,6 +321,8 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			return p.handleBranchPickerMouse(msg)
 		case ViewModeCommit:
 			return p.handleCommitMouse(msg)
+		case ViewModePushMenu:
+			return p.handlePushMenuMouse(msg)
 		case ViewModePullMenu:
 			return p.handlePullMenuMouse(msg)
 		case ViewModePullConflict:

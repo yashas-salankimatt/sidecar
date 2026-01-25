@@ -103,7 +103,7 @@ Also see `docs/guides/ui-feature-guide.md` for the modal initialization pattern.
 | Confirm Stash Pop | Confirmation | ✓ |
 | Pull Menu | Selection | ✓ |
 | Pull Conflict | Menu | ✓ |
-| Push Menu | Selection | ○ |
+| Push Menu | Selection | ✓ |
 | Commit Message | Form | ✓ |
 | Branch Picker | Selection | ✓ |
 
