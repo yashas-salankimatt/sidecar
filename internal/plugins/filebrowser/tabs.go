@@ -280,6 +280,8 @@ func (p *Plugin) resetPreviewModes() {
 	p.lineJumpMode = false
 	p.lineJumpBuffer = ""
 	p.infoMode = false
+	p.infoModal = nil
+	p.infoModalWidth = 0
 	p.blameMode = false
 	p.blameState = nil
 	p.blameModal = nil

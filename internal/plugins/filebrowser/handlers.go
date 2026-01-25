@@ -209,6 +209,7 @@ func (p *Plugin) handleTreeKey(key string) (plugin.Plugin, tea.Cmd) {
 		node := p.tree.GetNode(p.treeCursor)
 		if node != nil {
 			p.infoMode = true
+			p.clearInfoModal()
 			p.gitStatus = "Loading..."
 			p.gitLastCommit = "Loading..."
 			return p, p.fetchGitInfo(node.Path)
@@ -491,6 +492,7 @@ func (p *Plugin) handlePreviewKey(key string) (plugin.Plugin, tea.Cmd) {
 		// Show file info
 		if p.previewFile != "" {
 			p.infoMode = true
+			p.clearInfoModal()
 			p.gitStatus = "Loading..."
 			p.gitLastCommit = "Loading..."
 			return p, p.fetchGitInfo(p.previewFile)
@@ -758,12 +760,26 @@ func (p *Plugin) handleFileOpKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 
 // handleInfoKey handles key input during info modal mode.
 func (p *Plugin) handleInfoKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
-	key := msg.String()
-	switch key {
-	case "esc", "q", "i":
+	p.ensureInfoModal()
+	if p.infoModal == nil {
 		p.infoMode = false
+		return p, nil
 	}
-	return p, nil
+
+	switch msg.String() {
+	case "q", "i":
+		p.infoMode = false
+		p.clearInfoModal()
+		return p, nil
+	}
+
+	action, cmd := p.infoModal.HandleKey(msg)
+	if action == "cancel" {
+		p.infoMode = false
+		p.clearInfoModal()
+		return p, nil
+	}
+	return p, cmd
 }
 
 // handleContentSearchKey handles key input during content search mode.

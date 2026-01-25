@@ -114,7 +114,7 @@ Also see `docs/guides/ui-feature-guide.md` for the modal initialization pattern.
 | Modal | Type | Converted |
 |-------|------|-----------|
 | Blame View | Info | ✓ |
-| File Info | Info | ○ |
+| File Info | Info | ✓ |
 | Project Search | Results | ○ |
 
 ---
@@ -128,5 +128,5 @@ Also see `docs/guides/ui-feature-guide.md` for the modal initialization pattern.
 ## Summary
 
 **Total Modals:** 27 (excluding N/A)
-**Converted:** 10 (37%)
-**Remaining:** 17 (63%)
+**Converted:** 11 (41%)
+**Remaining:** 16 (59%)

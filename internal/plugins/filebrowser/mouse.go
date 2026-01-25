@@ -49,6 +49,11 @@ func (p *Plugin) handleMouse(msg tea.MouseMsg) (*Plugin, tea.Cmd) {
 		return p.handleQuickOpenMouse(msg)
 	}
 
+	// Handle info modal if active
+	if p.infoMode {
+		return p.handleInfoModalMouse(msg)
+	}
+
 	// Handle blame modal if active
 	if p.blameMode {
 		return p.handleBlameModalMouse(msg)
@@ -570,6 +575,22 @@ func (p *Plugin) findFlatIndexForMatch(fileIdx, matchIdx int) int {
 		}
 	}
 	return -1
+}
+
+// handleInfoModalMouse handles mouse events in the info modal.
+func (p *Plugin) handleInfoModalMouse(msg tea.MouseMsg) (*Plugin, tea.Cmd) {
+	p.ensureInfoModal()
+	if p.infoModal == nil {
+		p.infoMode = false
+		return p, nil
+	}
+
+	action := p.infoModal.HandleMouse(msg, p.mouseHandler)
+	if action == "cancel" {
+		p.infoMode = false
+		p.clearInfoModal()
+	}
+	return p, nil
 }
 
 // handleBlameModalMouse handles mouse events in the blame modal.

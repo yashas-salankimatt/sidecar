@@ -46,7 +46,7 @@ const (
 
 // Message types
 type (
-	RefreshMsg       struct{}
+	RefreshMsg   struct{}
 	TreeBuiltMsg struct {
 		Err error
 	}
@@ -179,9 +179,11 @@ type Plugin struct {
 	projectSearchState *ProjectSearchState
 
 	// Info modal state
-	infoMode      bool
-	gitStatus     string
-	gitLastCommit string
+	infoMode       bool
+	infoModal      *modal.Modal
+	infoModalWidth int
+	gitStatus      string
+	gitLastCommit  string
 
 	// Blame view state
 	blameMode       bool
