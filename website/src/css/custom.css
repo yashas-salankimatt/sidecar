@@ -7,6 +7,90 @@
  * Monokai-ish dark base with bright terminal accents
  */
 
+/* ==========================================================================
+   ANIMATED GRADIENT PROPERTIES
+   @property allows CSS to interpolate these values smoothly
+   ========================================================================== */
+
+@property --spotlight-x1 {
+  syntax: '<percentage>';
+  initial-value: 50%;
+  inherits: false;
+}
+
+@property --spotlight-y1 {
+  syntax: '<percentage>';
+  initial-value: 8%;
+  inherits: false;
+}
+
+@property --spotlight-x2 {
+  syntax: '<percentage>';
+  initial-value: 35%;
+  inherits: false;
+}
+
+@property --spotlight-y2 {
+  syntax: '<percentage>';
+  initial-value: 12%;
+  inherits: false;
+}
+
+@property --spotlight-x3 {
+  syntax: '<percentage>';
+  initial-value: 65%;
+  inherits: false;
+}
+
+@property --spotlight-y3 {
+  syntax: '<percentage>';
+  initial-value: 10%;
+  inherits: false;
+}
+
+@property --spotlight-x4 {
+  syntax: '<percentage>';
+  initial-value: 50%;
+  inherits: false;
+}
+
+@property --spotlight-y4 {
+  syntax: '<percentage>';
+  initial-value: 85%;
+  inherits: false;
+}
+
+/* Page background gradient positions */
+@property --page-glow-x1 {
+  syntax: '<percentage>';
+  initial-value: 50%;
+  inherits: false;
+}
+
+@property --page-glow-x2 {
+  syntax: '<percentage>';
+  initial-value: 80%;
+  inherits: false;
+}
+
+@property --page-glow-y2 {
+  syntax: '<percentage>';
+  initial-value: 60%;
+  inherits: false;
+}
+
+@property --page-glow-x3 {
+  syntax: '<percentage>';
+  initial-value: 20%;
+  inherits: false;
+}
+
+@property --page-glow-y3 {
+  syntax: '<percentage>';
+  initial-value: 80%;
+  inherits: false;
+}
+
 :root {
   /* Body text: Inter for readability */
   --ifm-font-family-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -191,48 +275,46 @@ html[data-theme="dark"] .footer {
   background: var(--sc-panel-2);
 }
 
-/* Full-page gradient background - vivid version with slow spotlight */
+/* Full-page gradient background - vivid version with subtle animation */
 html[data-theme="dark"]::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
+  --page-glow-x1: 50%;
+  --page-glow-x2: 80%;
+  --page-glow-y2: 60%;
+  --page-glow-x3: 20%;
+  --page-glow-y3: 80%;
   background:
-    radial-gradient(ellipse 80vw 50vh at 50% -20%, var(--sc-glow), transparent 50%),
-    radial-gradient(ellipse 60vw 40vh at 80% 60%, var(--sc-glow), transparent 70%),
-    radial-gradient(ellipse 60vw 40vh at 20% 80%, var(--sc-glow), transparent 70%);
+    radial-gradient(ellipse 80vw 50vh at var(--page-glow-x1) -20%, var(--sc-glow), transparent 50%),
+    radial-gradient(ellipse 60vw 40vh at var(--page-glow-x2) var(--page-glow-y2), var(--sc-glow), transparent 70%),
+    radial-gradient(ellipse 60vw 40vh at var(--page-glow-x3) var(--page-glow-y3), var(--sc-glow), transparent 70%);
   pointer-events: none;
-  animation: sc-page-spotlight 15s ease-in-out infinite;
+  animation: sc-page-glow 25s ease-in-out infinite;
 }
 
-@keyframes sc-page-spotlight {
+@keyframes sc-page-glow {
   0%, 100% {
-    background:
-      radial-gradient(ellipse 80vw 50vh at 50% -20%, var(--sc-glow), transparent 50%),
-      radial-gradient(ellipse 60vw 40vh at 80% 60%, var(--sc-glow), transparent 70%),
-      radial-gradient(ellipse 60vw 40vh at 20% 80%, var(--sc-glow), transparent 70%);
-    opacity: 1;
+    --page-glow-x1: 50%;
+    --page-glow-x2: 80%;
+    --page-glow-y2: 60%;
+    --page-glow-x3: 20%;
+    --page-glow-y3: 80%;
   }
-  25% {
-    background:
-      radial-gradient(ellipse 85vw 55vh at 45% -15%, var(--sc-glow), transparent 50%),
-      radial-gradient(ellipse 65vw 45vh at 75% 55%, var(--sc-glow), transparent 70%),
-      radial-gradient(ellipse 55vw 35vh at 25% 85%, var(--sc-glow), transparent 70%);
-    opacity: 0.9;
+  33% {
+    --page-glow-x1: 45%;
+    --page-glow-x2: 75%;
+    --page-glow-y2: 55%;
+    --page-glow-x3: 25%;
+    --page-glow-y3: 85%;
   }
-  50% {
-    background:
-      radial-gradient(ellipse 75vw 45vh at 55% -25%, var(--sc-glow), transparent 50%),
-      radial-gradient(ellipse 55vw 35vh at 85% 65%, var(--sc-glow), transparent 70%),
-      radial-gradient(ellipse 65vw 45vh at 15% 75%, var(--sc-glow), transparent 70%);
-    opacity: 1;
-  }
-  75% {
-    background:
-      radial-gradient(ellipse 85vw 55vh at 48% -18%, var(--sc-glow), transparent 50%),
-      radial-gradient(ellipse 70vw 50vh at 70% 50%, var(--sc-glow), transparent 70%),
-      radial-gradient(ellipse 60vw 40vh at 30% 90%, var(--sc-glow), transparent 70%);
-    opacity: 0.95;
+  66% {
+    --page-glow-x1: 55%;
+    --page-glow-x2: 85%;
+    --page-glow-y2: 65%;
+    --page-glow-x3: 15%;
+    --page-glow-y3: 75%;
   }
 }
 
@@ -284,43 +366,63 @@ a:hover {
   content: "";
   position: absolute;
   inset: -60px;
+  --spotlight-x1: 50%;
+  --spotlight-y1: 8%;
+  --spotlight-x2: 35%;
+  --spotlight-y2: 12%;
+  --spotlight-x3: 65%;
+  --spotlight-y3: 10%;
+  --spotlight-x4: 50%;
+  --spotlight-y4: 85%;
   background:
-    radial-gradient(520px 260px at 50% 8%, rgba(174, 129, 255, 0.42), transparent 60%),
-    radial-gradient(900px 420px at 35% 12%, rgba(249, 38, 114, 0.32), transparent 60%),
-    radial-gradient(900px 420px at 65% 10%, rgba(102, 217, 239, 0.28), transparent 60%),
-    radial-gradient(900px 520px at 50% 85%, rgba(166, 226, 46, 0.20), transparent 60%);
+    radial-gradient(520px 260px at var(--spotlight-x1) var(--spotlight-y1), rgba(174, 129, 255, 0.42), transparent 60%),
+    radial-gradient(900px 420px at var(--spotlight-x2) var(--spotlight-y2), rgba(249, 38, 114, 0.32), transparent 60%),
+    radial-gradient(900px 420px at var(--spotlight-x3) var(--spotlight-y3), rgba(102, 217, 239, 0.28), transparent 60%),
+    radial-gradient(900px 520px at var(--spotlight-x4) var(--spotlight-y4), rgba(166, 226, 46, 0.20), transparent 60%);
   pointer-events: none;
-  animation: sc-hero-spotlight 12s ease-in-out infinite;
+  animation: sc-hero-spotlight 20s ease-in-out infinite;
 }
 
 @keyframes sc-hero-spotlight {
   0%, 100% {
-    background:
-      radial-gradient(520px 260px at 50% 8%, rgba(174, 129, 255, 0.42), transparent 60%),
-      radial-gradient(900px 420px at 35% 12%, rgba(249, 38, 114, 0.32), transparent 60%),
-      radial-gradient(900px 420px at 65% 10%, rgba(102, 217, 239, 0.28), transparent 60%),
-      radial-gradient(900px 520px at 50% 85%, rgba(166, 226, 46, 0.20), transparent 60%);
+    --spotlight-x1: 50%;
+    --spotlight-y1: 8%;
+    --spotlight-x2: 35%;
+    --spotlight-y2: 12%;
+    --spotlight-x3: 65%;
+    --spotlight-y3: 10%;
+    --spotlight-x4: 50%;
+    --spotlight-y4: 85%;
   }
   25% {
-    background:
-      radial-gradient(550px 280px at 45% 12%, rgba(174, 129, 255, 0.38), transparent 60%),
-      radial-gradient(950px 450px at 30% 8%, rgba(249, 38, 114, 0.28), transparent 60%),
-      radial-gradient(850px 400px at 70% 15%, rgba(102, 217, 239, 0.32), transparent 60%),
-      radial-gradient(850px 480px at 55% 80%, rgba(166, 226, 46, 0.18), transparent 60%);
+    --spotlight-x1: 45%;
+    --spotlight-y1: 12%;
+    --spotlight-x2: 30%;
+    --spotlight-y2: 8%;
+    --spotlight-x3: 70%;
+    --spotlight-y3: 15%;
+    --spotlight-x4: 55%;
+    --spotlight-y4: 80%;
   }
   50% {
-    background:
-      radial-gradient(580px 290px at 55% 5%, rgba(174, 129, 255, 0.35), transparent 60%),
-      radial-gradient(880px 400px at 40% 15%, rgba(249, 38, 114, 0.35), transparent 60%),
-      radial-gradient(920px 440px at 60% 8%, rgba(102, 217, 239, 0.25), transparent 60%),
-      radial-gradient(920px 540px at 45% 88%, rgba(166, 226, 46, 0.22), transparent 60%);
+    --spotlight-x1: 55%;
+    --spotlight-y1: 5%;
+    --spotlight-x2: 40%;
+    --spotlight-y2: 15%;
+    --spotlight-x3: 60%;
+    --spotlight-y3: 8%;
+    --spotlight-x4: 45%;
+    --spotlight-y4: 88%;
   }
   75% {
-    background:
-      radial-gradient(540px 270px at 48% 10%, rgba(174, 129, 255, 0.40), transparent 60%),
-      radial-gradient(920px 430px at 32% 10%, rgba(249, 38, 114, 0.30), transparent 60%),
-      radial-gradient(870px 410px at 68% 12%, rgba(102, 217, 239, 0.30), transparent 60%),
-      radial-gradient(880px 500px at 52% 82%, rgba(166, 226, 46, 0.18), transparent 60%);
+    --spotlight-x1: 48%;
+    --spotlight-y1: 10%;
+    --spotlight-x2: 32%;
+    --spotlight-y2: 10%;
+    --spotlight-x3: 68%;
+    --spotlight-y3: 12%;
+    --spotlight-x4: 52%;
+    --spotlight-y4: 82%;
   }
 }
 
