@@ -686,44 +686,42 @@ func (p *Plugin) updateDiff(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 
 // updateCommit handles key events in the commit view.
 func (p *Plugin) updateCommit(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		// Cancel commit, return to status
-		p.viewMode = ViewModeStatus
-		p.commitAmend = false
-		p.commitError = ""
+	p.ensureCommitModal()
+	if p.commitModal == nil {
 		return p, nil
-
-	case "ctrl+s":
-		// Execute commit if message not empty
-		return p, p.tryCommit()
-
-	case "tab", "shift+tab":
-		// Toggle focus between textarea and button
-		p.commitButtonFocus = !p.commitButtonFocus
-		if p.commitButtonFocus {
-			p.commitMessage.Blur()
-		} else {
-			p.commitMessage.Focus()
-		}
-		return p, nil
-
-	case "enter":
-		// If button is focused, execute commit
-		if p.commitButtonFocus {
-			return p, p.tryCommit()
-		}
-		// Otherwise let textarea handle it (newline)
 	}
 
-	// Pass other keys to textarea (only if textarea is focused)
-	if !p.commitButtonFocus {
-		var cmd tea.Cmd
-		p.commitMessage, cmd = p.commitMessage.Update(msg)
+	switch msg.String() {
+	case "ctrl+s", "ctrl+enter":
+		return p, p.tryCommit()
+	}
+
+	wasAmend := p.commitAmend
+	focusID := p.commitModal.FocusedID()
+	action, cmd := p.commitModal.HandleKey(msg)
+
+	if p.commitAmend != wasAmend {
+		p.commitModal = nil
+		p.commitModalWidthCache = 0
+	}
+
+	if action == commitActionID && (focusID == commitMessageID || focusID == commitAmendID) {
 		return p, cmd
 	}
 
-	return p, nil
+	switch action {
+	case commitActionID:
+		return p, p.tryCommit()
+	case "cancel":
+		p.viewMode = ViewModeStatus
+		p.commitAmend = false
+		p.commitError = ""
+		p.commitModal = nil
+		p.commitModalWidthCache = 0
+		return p, nil
+	}
+
+	return p, cmd
 }
 
 // tryCommit attempts to execute the commit (or amend) if message is valid.

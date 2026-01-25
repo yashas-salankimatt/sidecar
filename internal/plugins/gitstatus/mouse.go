@@ -358,25 +358,27 @@ func (p *Plugin) handleMouseDragEnd() (*Plugin, tea.Cmd) {
 
 // handleCommitMouse processes mouse events in the commit modal.
 func (p *Plugin) handleCommitMouse(msg tea.MouseMsg) (*Plugin, tea.Cmd) {
-	action := p.mouseHandler.HandleMouse(msg)
+	p.ensureCommitModal()
+	if p.commitModal == nil {
+		return p, nil
+	}
 
-	switch action.Type {
-	case mouse.ActionClick:
-		if action.Region != nil && action.Region.ID == regionCommitButton {
-			// Click on commit button
-			p.commitButtonFocus = true
-			p.commitMessage.Blur()
-			return p, p.tryCommit()
-		}
-		// Click elsewhere - clear hover
-		p.commitButtonHover = false
-
-	case mouse.ActionHover:
-		if action.Region != nil && action.Region.ID == regionCommitButton {
-			p.commitButtonHover = true
-		} else {
-			p.commitButtonHover = false
-		}
+	action := p.commitModal.HandleMouse(msg, p.mouseHandler)
+	switch action {
+	case commitActionID:
+		return p, p.tryCommit()
+	case commitAmendID:
+		p.commitAmend = !p.commitAmend
+		p.commitModal = nil
+		p.commitModalWidthCache = 0
+		return p, nil
+	case "cancel":
+		p.viewMode = ViewModeStatus
+		p.commitAmend = false
+		p.commitError = ""
+		p.commitModal = nil
+		p.commitModalWidthCache = 0
+		return p, nil
 	}
 
 	return p, nil

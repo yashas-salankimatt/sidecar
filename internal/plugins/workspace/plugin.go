@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/sidecar/internal/markdown"
+	"github.com/marcus/sidecar/internal/modal"
 	"github.com/marcus/sidecar/internal/mouse"
 	"github.com/marcus/sidecar/internal/plugin"
 	"github.com/marcus/sidecar/internal/plugins/gitstatus"
@@ -182,10 +183,13 @@ type Plugin struct {
 	createTaskID          string
 	createTaskTitle       string    // Title of selected task for display
 	createAgentType       AgentType // Selected agent type (default: AgentClaude)
+	createAgentIdx        int       // Selected agent index in AgentTypeOrder
 	createSkipPermissions bool      // Skip permissions checkbox
 	createFocus           int       // 0=name, 1=base, 2=prompt, 3=task, 4=agent, 5=skipPerms, 6=create, 7=cancel
 	createButtonHover     int       // 0=none, 1=create, 2=cancel
 	createError           string    // Error message to display in create modal
+	createModal           *modal.Modal
+	createModalWidth      int
 
 	// Branch name validation state
 	branchNameValid     bool     // Is current name valid?
@@ -605,9 +609,12 @@ func (p *Plugin) clearCreateModal() {
 	p.createTaskID = ""
 	p.createTaskTitle = ""
 	p.createAgentType = AgentClaude // Default to Claude
+	p.createAgentIdx = p.agentTypeIndex(p.createAgentType)
 	p.createSkipPermissions = false
 	p.createFocus = 0
 	p.createError = ""
+	p.createModal = nil
+	p.createModalWidth = 0
 	p.taskSearchInput = textinput.Model{}
 	p.taskSearchAll = nil
 	p.taskSearchFiltered = nil
@@ -629,24 +636,30 @@ func (p *Plugin) initCreateModalBase() {
 	// Initialize text inputs
 	p.createNameInput = textinput.New()
 	p.createNameInput.Placeholder = "feature-name"
+	p.createNameInput.Prompt = ""
 	p.createNameInput.Focus()
 	p.createNameInput.CharLimit = 100
 
 	p.createBaseBranchInput = textinput.New()
 	p.createBaseBranchInput.Placeholder = "main"
+	p.createBaseBranchInput.Prompt = ""
 	p.createBaseBranchInput.CharLimit = 100
 
 	p.taskSearchInput = textinput.New()
 	p.taskSearchInput.Placeholder = "Search tasks..."
+	p.taskSearchInput.Prompt = ""
 	p.taskSearchInput.CharLimit = 100
 
 	// Reset all state
 	p.createTaskID = ""
 	p.createTaskTitle = ""
 	p.createAgentType = AgentClaude
+	p.createAgentIdx = p.agentTypeIndex(p.createAgentType)
 	p.createSkipPermissions = false
 	p.createFocus = 0
 	p.createError = ""
+	p.createModal = nil
+	p.createModalWidth = 0
 	p.taskSearchAll = nil
 	p.taskSearchFiltered = nil
 	p.taskSearchIdx = 0

@@ -135,6 +135,8 @@ type Plugin struct {
 	commitAmend       bool // true when amending last commit
 	commitButtonFocus bool // true when button is focused instead of textarea
 	commitButtonHover bool // true when mouse is hovering over button
+	commitModal       *modal.Modal
+	commitModalWidthCache int
 
 	// Mouse support
 	mouseHandler *mouse.Handler
@@ -1088,6 +1090,8 @@ func (p *Plugin) initCommitTextarea() {
 	p.commitError = ""
 	p.commitButtonFocus = false
 	p.commitButtonHover = false
+	p.commitModal = nil
+	p.commitModalWidthCache = 0
 }
 
 
@@ -1131,5 +1135,3 @@ type StashPopConfirmMsg struct {
 }
 
 // updateConfirmStashPop handles key events in the confirm stash pop modal.
-
-

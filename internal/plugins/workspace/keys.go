@@ -874,46 +874,33 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 // handleCreateKeys handles keys in create modal.
 // createFocus: 0=name, 1=base, 2=prompt, 3=task, 4=agent, 5=skipPerms, 6=create button, 7=cancel button
 func (p *Plugin) handleCreateKeys(msg tea.KeyMsg) tea.Cmd {
+	p.ensureCreateModal()
+	if p.createModal == nil {
+		return nil
+	}
+
+	focusID := p.createModal.FocusedID()
+
 	switch msg.String() {
 	case "esc":
 		p.viewMode = ViewModeList
 		p.clearCreateModal()
 		return nil
 	case "tab":
-		// Blur current, move focus, focus new
 		p.blurCreateInputs()
 		p.createFocus = (p.createFocus + 1) % 8
-		// Skip task field (3) if prompt has ticketMode=none
-		if p.createFocus == 3 {
-			prompt := p.getSelectedPrompt()
-			if prompt != nil && prompt.TicketMode == TicketNone {
-				p.createFocus = 4 // Skip to agent
-			}
-		}
-		// Skip state 5 (skipPerms) if checkbox is hidden
-		if p.createFocus == 5 && !p.shouldShowSkipPermissions() {
-			p.createFocus = 6
-		}
+		p.normalizeCreateFocus()
 		p.focusCreateInput()
+		p.syncCreateModalFocus()
 		return nil
 	case "shift+tab":
 		p.blurCreateInputs()
 		p.createFocus = (p.createFocus + 7) % 8
-		// Skip state 5 (skipPerms) if checkbox is hidden
-		if p.createFocus == 5 && !p.shouldShowSkipPermissions() {
-			p.createFocus = 4
-		}
-		// Skip task field (3) if prompt has ticketMode=none
-		if p.createFocus == 3 {
-			prompt := p.getSelectedPrompt()
-			if prompt != nil && prompt.TicketMode == TicketNone {
-				p.createFocus = 2 // Back to prompt
-			}
-		}
+		p.normalizeCreateFocus()
 		p.focusCreateInput()
+		p.syncCreateModalFocus()
 		return nil
 	case "backspace":
-		// Clear selected task and allow searching again (now focus 3)
 		if p.createFocus == 3 && p.createTaskID != "" {
 			p.createTaskID = ""
 			p.createTaskTitle = ""
@@ -921,131 +908,154 @@ func (p *Plugin) handleCreateKeys(msg tea.KeyMsg) tea.Cmd {
 			p.taskSearchInput.Focus()
 			p.taskSearchFiltered = filterTasks("", p.taskSearchAll)
 			p.taskSearchIdx = 0
+			p.syncCreateModalFocus()
 			return nil
 		}
 	case " ":
-		// Toggle skip permissions checkbox (now focus 5)
 		if p.createFocus == 5 {
 			p.createSkipPermissions = !p.createSkipPermissions
 			return nil
 		}
 	case "up":
-		// Navigate branch dropdown
 		if p.createFocus == 1 && len(p.branchFiltered) > 0 {
 			if p.branchIdx > 0 {
 				p.branchIdx--
 			}
 			return nil
 		}
-		// Navigate task dropdown (now focus 3)
 		if p.createFocus == 3 && len(p.taskSearchFiltered) > 0 {
 			if p.taskSearchIdx > 0 {
 				p.taskSearchIdx--
 			}
 			return nil
 		}
-		// Navigate agent selection (now focus 4)
-		if p.createFocus == 4 {
-			p.cycleAgentType(false)
-			return nil
-		}
 	case "down":
-		// Navigate branch dropdown
 		if p.createFocus == 1 && len(p.branchFiltered) > 0 {
 			if p.branchIdx < len(p.branchFiltered)-1 {
 				p.branchIdx++
 			}
 			return nil
 		}
-		// Navigate task dropdown (now focus 3)
 		if p.createFocus == 3 && len(p.taskSearchFiltered) > 0 {
 			if p.taskSearchIdx < len(p.taskSearchFiltered)-1 {
 				p.taskSearchIdx++
 			}
 			return nil
 		}
-		// Navigate agent selection (now focus 4)
-		if p.createFocus == 4 {
-			p.cycleAgentType(true)
+	case "enter":
+		if idx, ok := parseIndexedID(createBranchItemPrefix, focusID); ok && idx < len(p.branchFiltered) {
+			p.createBaseBranchInput.SetValue(p.branchFiltered[idx])
+			p.branchFiltered = nil
+			p.syncCreateModalFocus()
 			return nil
 		}
-	case "enter":
-		// Select branch from dropdown if in branch field
+		if idx, ok := parseIndexedID(createTaskItemPrefix, focusID); ok && idx < len(p.taskSearchFiltered) {
+			task := p.taskSearchFiltered[idx]
+			p.createTaskID = task.ID
+			p.createTaskTitle = task.Title
+			p.taskSearchInput.Blur()
+			p.createFocus = 4
+			p.syncCreateModalFocus()
+			return nil
+		}
+		if focusID == createPromptFieldID {
+			p.promptPicker = NewPromptPicker(p.createPrompts, p.width, p.height)
+			p.viewMode = ViewModePromptPicker
+			return nil
+		}
+		if focusID == createSubmitID {
+			return p.validateAndCreateWorktree()
+		}
+		if focusID == createCancelID {
+			p.viewMode = ViewModeList
+			p.clearCreateModal()
+			return nil
+		}
 		if p.createFocus == 1 && len(p.branchFiltered) > 0 {
 			selectedBranch := p.branchFiltered[p.branchIdx]
 			p.createBaseBranchInput.SetValue(selectedBranch)
-			p.createBaseBranchInput.Blur()
-			p.createFocus = 2 // Move to prompt field
+			p.createFocus = 2
 			p.focusCreateInput()
+			p.syncCreateModalFocus()
 			return nil
 		}
-		// Open prompt picker if in prompt field
 		if p.createFocus == 2 {
 			p.promptPicker = NewPromptPicker(p.createPrompts, p.width, p.height)
 			p.viewMode = ViewModePromptPicker
 			return nil
 		}
-		// Select task from dropdown if in task field (now focus 3)
 		if p.createFocus == 3 && len(p.taskSearchFiltered) > 0 {
-			// Select task and move to next field
 			selectedTask := p.taskSearchFiltered[p.taskSearchIdx]
 			p.createTaskID = selectedTask.ID
 			p.createTaskTitle = selectedTask.Title
 			p.taskSearchInput.Blur()
-			p.createFocus = 4 // Move to agent field
+			p.createFocus = 4
+			p.syncCreateModalFocus()
 			return nil
 		}
-		// Create button (now focus 6)
 		if p.createFocus == 6 {
-			// Validate name before creating
-			name := p.createNameInput.Value()
-			if name == "" {
-				p.createError = "Name is required"
-				return nil
-			}
-			if !p.branchNameValid {
-				p.createError = "Invalid branch name: " + strings.Join(p.branchNameErrors, ", ")
-				return nil
-			}
-			return p.createWorktree()
+			return p.validateAndCreateWorktree()
 		}
-		// Cancel button (now focus 7)
 		if p.createFocus == 7 {
 			p.viewMode = ViewModeList
 			p.clearCreateModal()
 			return nil
 		}
-		// From input fields (0-1), move to next field
 		if p.createFocus < 2 {
-			p.blurCreateInputs()
 			p.createFocus++
 			p.focusCreateInput()
+			p.syncCreateModalFocus()
+			return nil
 		}
+	}
+
+	wasAgentIdx := p.createAgentIdx
+	action, cmd := p.createModal.HandleKey(msg)
+	if p.createAgentIdx != wasAgentIdx && p.createAgentIdx < len(AgentTypeOrder) {
+		p.createAgentType = AgentTypeOrder[p.createAgentIdx]
+		p.syncCreateModalFocus()
+	}
+
+	if action == createSubmitID && focusID != createSubmitID {
+		return cmd
+	}
+	if action == "cancel" || action == createCancelID {
+		p.viewMode = ViewModeList
+		p.clearCreateModal()
 		return nil
 	}
 
-	// Delegate to focused textinput for all other keys
-	// Clear error when user types (they're correcting the issue)
+	// Delegate to task input for all other keys.
 	p.createError = ""
-	var cmd tea.Cmd
 	switch p.createFocus {
 	case 0:
-		p.createNameInput, cmd = p.createNameInput.Update(msg)
-		// Validate branch name in real-time
 		name := p.createNameInput.Value()
 		p.branchNameValid, p.branchNameErrors, p.branchNameSanitized = ValidateBranchName(name)
 	case 1:
-		p.createBaseBranchInput, cmd = p.createBaseBranchInput.Update(msg)
-		// Update filtered branches on input change
 		p.branchFiltered = filterBranches(p.createBaseBranchInput.Value(), p.branchAll)
 		p.branchIdx = 0
 	case 3:
-		p.taskSearchInput, cmd = p.taskSearchInput.Update(msg)
-		// Update filtered results on input change
-		p.taskSearchFiltered = filterTasks(p.taskSearchInput.Value(), p.taskSearchAll)
-		p.taskSearchIdx = 0
+		if p.createTaskID == "" {
+			p.taskSearchInput, cmd = p.taskSearchInput.Update(msg)
+			p.taskSearchFiltered = filterTasks(p.taskSearchInput.Value(), p.taskSearchAll)
+			p.taskSearchIdx = 0
+		}
 	}
+
 	return cmd
+}
+
+func (p *Plugin) validateAndCreateWorktree() tea.Cmd {
+	name := p.createNameInput.Value()
+	if name == "" {
+		p.createError = "Name is required"
+		return nil
+	}
+	if !p.branchNameValid {
+		p.createError = "Invalid branch name: " + strings.Join(p.branchNameErrors, ", ")
+		return nil
+	}
+	return p.createWorktree()
 }
 
 // shouldShowSkipPermissions returns true if the current agent type supports skip permissions.
@@ -1057,15 +1067,18 @@ func (p *Plugin) shouldShowSkipPermissions() bool {
 	return flag != ""
 }
 
-// cycleAgentType cycles through agent types in the selection.
-func (p *Plugin) cycleAgentType(forward bool) {
-	currentIdx := 0
+func (p *Plugin) agentTypeIndex(agentType AgentType) int {
 	for i, at := range AgentTypeOrder {
-		if at == p.createAgentType {
-			currentIdx = i
-			break
+		if at == agentType {
+			return i
 		}
 	}
+	return 0
+}
+
+// cycleAgentType cycles through agent types in the selection.
+func (p *Plugin) cycleAgentType(forward bool) {
+	currentIdx := p.agentTypeIndex(p.createAgentType)
 
 	if forward {
 		currentIdx = (currentIdx + 1) % len(AgentTypeOrder)
@@ -1073,6 +1086,7 @@ func (p *Plugin) cycleAgentType(forward bool) {
 		currentIdx = (currentIdx + len(AgentTypeOrder) - 1) % len(AgentTypeOrder)
 	}
 
+	p.createAgentIdx = currentIdx
 	p.createAgentType = AgentTypeOrder[currentIdx]
 }
 

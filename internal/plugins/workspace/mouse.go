@@ -32,6 +32,10 @@ func isBackgroundRegion(regionID string) bool {
 
 // handleMouse processes mouse input.
 func (p *Plugin) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	if p.viewMode == ViewModeCreate {
+		return p.handleCreateModalMouse(msg)
+	}
+
 	action := p.mouseHandler.HandleMouse(msg)
 
 	switch action.Type {
@@ -48,6 +52,76 @@ func (p *Plugin) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	case mouse.ActionHover:
 		return p.handleMouseHover(action)
 	}
+	return nil
+}
+
+func (p *Plugin) handleCreateModalMouse(msg tea.MouseMsg) tea.Cmd {
+	p.ensureCreateModal()
+	if p.createModal == nil {
+		return nil
+	}
+
+	action := p.createModal.HandleMouse(msg, p.mouseHandler)
+	switch action {
+	case "":
+		return nil
+	case createSubmitID:
+		return p.validateAndCreateWorktree()
+	case createCancelID, "cancel":
+		p.viewMode = ViewModeList
+		p.clearCreateModal()
+		return nil
+	case createPromptFieldID:
+		p.createFocus = 2
+		p.syncCreateModalFocus()
+		p.promptPicker = NewPromptPicker(p.createPrompts, p.width, p.height)
+		p.viewMode = ViewModePromptPicker
+		return nil
+	case createNameFieldID:
+		p.createFocus = 0
+		p.focusCreateInput()
+		p.syncCreateModalFocus()
+		return nil
+	case createBaseFieldID:
+		p.createFocus = 1
+		p.focusCreateInput()
+		p.syncCreateModalFocus()
+		return nil
+	case createTaskFieldID:
+		p.createFocus = 3
+		p.focusCreateInput()
+		p.syncCreateModalFocus()
+		return nil
+	case createSkipPermissionsID:
+		p.createFocus = 5
+		p.createSkipPermissions = !p.createSkipPermissions
+		p.syncCreateModalFocus()
+		return nil
+	}
+
+	if idx, ok := parseIndexedID(createBranchItemPrefix, action); ok && idx < len(p.branchFiltered) {
+		p.createBaseBranchInput.SetValue(p.branchFiltered[idx])
+		p.branchFiltered = nil
+		p.createFocus = 1
+		p.syncCreateModalFocus()
+		return nil
+	}
+	if idx, ok := parseIndexedID(createTaskItemPrefix, action); ok && idx < len(p.taskSearchFiltered) {
+		task := p.taskSearchFiltered[idx]
+		p.createTaskID = task.ID
+		p.createTaskTitle = task.Title
+		p.createFocus = 3
+		p.syncCreateModalFocus()
+		return nil
+	}
+	if idx, ok := parseIndexedID(createAgentItemPrefix, action); ok && idx < len(AgentTypeOrder) {
+		p.createAgentIdx = idx
+		p.createAgentType = AgentTypeOrder[idx]
+		p.createFocus = 4
+		p.syncCreateModalFocus()
+		return nil
+	}
+
 	return nil
 }
 

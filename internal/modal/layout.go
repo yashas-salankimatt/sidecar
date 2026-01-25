@@ -68,13 +68,15 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 
 	// 2. Join full content with newlines between non-empty sections
 	var parts []string
+	totalContentHeight := 0
 	for _, r := range visible {
 		parts = append(parts, r.content)
+		totalContentHeight += r.height
 	}
 	fullContent := strings.Join(parts, "\n")
 
 	// 3. Compute scroll viewport
-	totalContentHeight := measureHeight(fullContent)
+	actualContentHeight := totalContentHeight
 
 	modalInnerHeight := desiredModalInnerHeight(screenH)
 	headerLines := 0
@@ -86,13 +88,13 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 
 	viewportHeight := maxViewportHeight
 	padToHeight := true
-	if totalContentHeight <= maxViewportHeight {
-		viewportHeight = max(1, totalContentHeight)
+	if actualContentHeight <= maxViewportHeight {
+		viewportHeight = max(1, actualContentHeight)
 		padToHeight = false
 	}
 
 	// Clamp scroll offset
-	maxScroll := max(0, totalContentHeight-viewportHeight)
+	maxScroll := max(0, actualContentHeight-viewportHeight)
 	m.scrollOffset = clamp(m.scrollOffset, 0, maxScroll)
 
 	// Slice content to viewport

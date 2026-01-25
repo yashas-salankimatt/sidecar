@@ -5,44 +5,16 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/marcus/sidecar/internal/modal"
 	"github.com/marcus/sidecar/internal/styles"
 	"github.com/marcus/sidecar/internal/ui"
 )
 
-// boolToInt converts a bool to int: true -> 1, false -> 0
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-// estimateCommitModalHeight estimates the height of the commit modal.
-func (p *Plugin) estimateCommitModalHeight() int {
-	stagedCount := len(p.tree.Staged)
-	maxFiles := 8
-	if p.height < 30 {
-		maxFiles = 6
-	}
-	if p.height < 24 {
-		maxFiles = 4
-	}
-	displayedFiles := stagedCount
-	if displayedFiles > maxFiles {
-		displayedFiles = maxFiles + 1 // +1 for "... +N more" line
-	}
-
-	// Lines: border(2) + padding(2) + header(2) + staged label(1) + files + blank(1) +
-	//        textarea(4) + button(1) + error?(0-1) + progress?(0-1) + separator(2) + footer(1)
-	height := 4 + 2 + 1 + displayedFiles + 1 + 4 + 1 + 2 + 1
-	if p.commitError != "" {
-		height++
-	}
-	if p.commitInProgress {
-		height++
-	}
-	return height
-}
+const (
+	commitMessageID = "commit-message"
+	commitAmendID   = "commit-amend"
+	commitActionID  = "execute-commit"
+)
 
 // commitModalWidth returns the width for the commit modal content.
 func (p *Plugin) commitModalWidth() int {
@@ -56,42 +28,82 @@ func (p *Plugin) commitModalWidth() int {
 	return w
 }
 
-// renderCommit renders the commit message modal box.
-func (p *Plugin) renderCommit() string {
-	modalWidth := p.commitModalWidth()
-	contentWidth := modalWidth - 6 // Account for border (2) + padding (4)
+func (p *Plugin) ensureCommitModal() {
+	modalW := p.commitModalWidth()
+	if p.commitModal != nil && p.commitModalWidthCache == modalW {
+		return
+	}
+	p.commitModalWidthCache = modalW
+	p.commitModal = modal.New("",
+		modal.WithWidth(modalW),
+		modal.WithPrimaryAction(commitActionID),
+		modal.WithHints(false),
+	).
+		AddSection(p.commitHeaderSection()).
+		AddSection(p.commitStagedSection()).
+		AddSection(modal.Spacer()).
+		AddSection(modal.Textarea(commitMessageID, &p.commitMessage, 4)).
+		AddSection(modal.When(p.showCommitAmendToggle, modal.Checkbox(commitAmendID, "Amend last commit", &p.commitAmend))).
+		AddSection(p.commitStatusSection()).
+		AddSection(modal.Buttons(
+			modal.Btn(p.commitButtonLabel(), commitActionID),
+			modal.Btn(" Cancel ", "cancel"),
+		))
+}
 
-	var sb strings.Builder
+func (p *Plugin) showCommitAmendToggle() bool {
+	if len(p.recentCommits) == 0 {
+		return false
+	}
+	return p.tree.HasStagedFiles()
+}
 
-	// Calculate stats
-	additions, deletions := p.tree.StagedStats()
-	fileCount := len(p.tree.Staged)
-
-	// Header with stats
-	titleText := " Commit "
+func (p *Plugin) commitButtonLabel() string {
 	if p.commitAmend {
-		titleText = " Amend "
+		return " Amend "
 	}
-	title := styles.Title.Render(titleText)
-	statsStr := ""
-	if fileCount > 0 {
-		statsStr = fmt.Sprintf("[%d: +%d -%d]", fileCount, additions, deletions)
-	}
-	statsRendered := styles.Muted.Render(statsStr)
-	padding := contentWidth - lipgloss.Width(title) - lipgloss.Width(statsStr)
-	if padding < 1 {
-		padding = 1
-	}
-	sb.WriteString(title + strings.Repeat(" ", padding) + statsRendered)
-	sb.WriteString("\n")
-	sb.WriteString(styles.Muted.Render(strings.Repeat("─", contentWidth)))
-	sb.WriteString("\n")
+	return " Commit "
+}
 
-	// Staged files section - show more files based on available height
-	if p.commitAmend && fileCount == 0 {
-		sb.WriteString(styles.Muted.Render("Message-only amend (no staged changes)"))
-		sb.WriteString("\n")
-	} else {
+func (p *Plugin) commitHeaderSection() modal.Section {
+	return modal.Custom(func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+		additions, deletions := p.tree.StagedStats()
+		fileCount := len(p.tree.Staged)
+
+		titleText := " Commit "
+		if p.commitAmend {
+			titleText = " Amend "
+		}
+		title := styles.Title.Render(titleText)
+
+		statsStr := ""
+		if fileCount > 0 {
+			statsStr = fmt.Sprintf("[%d: +%d -%d]", fileCount, additions, deletions)
+		}
+		statsRendered := styles.Muted.Render(statsStr)
+
+		padding := contentWidth - lipgloss.Width(title) - lipgloss.Width(statsStr)
+		if padding < 1 {
+			padding = 1
+		}
+
+		line := title + strings.Repeat(" ", padding) + statsRendered
+		sep := styles.Muted.Render(strings.Repeat("─", contentWidth))
+
+		return modal.RenderedSection{Content: line + "\n" + sep}
+	}, nil)
+}
+
+func (p *Plugin) commitStagedSection() modal.Section {
+	return modal.Custom(func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+		var sb strings.Builder
+
+		fileCount := len(p.tree.Staged)
+		if p.commitAmend && fileCount == 0 {
+			sb.WriteString(styles.Muted.Render("Message-only amend (no staged changes)"))
+			return modal.RenderedSection{Content: sb.String()}
+		}
+
 		if p.commitAmend {
 			sb.WriteString(styles.StatusStaged.Render(fmt.Sprintf("Staged (%d) — will be added to amended commit", fileCount)))
 		} else {
@@ -99,7 +111,6 @@ func (p *Plugin) renderCommit() string {
 		}
 		sb.WriteString("\n")
 
-		// Dynamic maxFiles: allow up to 8, fewer on small terminals
 		maxFiles := 8
 		if p.height < 30 {
 			maxFiles = 6
@@ -107,18 +118,16 @@ func (p *Plugin) renderCommit() string {
 		if p.height < 24 {
 			maxFiles = 4
 		}
+
 		for i, entry := range p.tree.Staged {
 			if i >= maxFiles {
 				remaining := len(p.tree.Staged) - maxFiles
 				sb.WriteString(styles.Muted.Render(fmt.Sprintf("  ... +%d more", remaining)))
-				sb.WriteString("\n")
 				break
 			}
 
-			// Status indicator
 			status := styles.StatusStaged.Render(string(entry.Status))
 
-			// Path - truncate for modal width
 			path := entry.Path
 			maxPathWidth := contentWidth - 18
 			if maxPathWidth < 10 {
@@ -128,7 +137,6 @@ func (p *Plugin) renderCommit() string {
 				path = "..." + path[len(path)-maxPathWidth+3:]
 			}
 
-			// Diff stats
 			stats := ""
 			if entry.DiffStats.Additions > 0 || entry.DiffStats.Deletions > 0 {
 				addStr := styles.DiffAdd.Render(fmt.Sprintf("+%d", entry.DiffStats.Additions))
@@ -136,125 +144,41 @@ func (p *Plugin) renderCommit() string {
 				stats = fmt.Sprintf(" %s %s", addStr, delStr)
 			}
 
-			sb.WriteString(fmt.Sprintf("  %s %s%s\n", status, path, stats))
+			sb.WriteString(fmt.Sprintf("  %s %s%s", status, path, stats))
+			if i < maxFiles-1 && i < len(p.tree.Staged)-1 {
+				sb.WriteString("\n")
+			}
 		}
-	}
 
-	sb.WriteString("\n")
+		return modal.RenderedSection{Content: sb.String()}
+	}, nil)
+}
 
-	// Textarea
-	sb.WriteString(p.commitMessage.View())
-	sb.WriteString("\n")
-
-	// Commit button + hints (focus > hover > normal)
-	buttonStyle := ui.ResolveButtonStyle(
-		boolToInt(p.commitButtonFocus),
-		boolToInt(p.commitButtonHover),
-		1, // button index 1
-	)
-	buttonLabel := " Commit "
-	if p.commitAmend {
-		buttonLabel = " Amend "
-	}
-	sb.WriteString(buttonStyle.Render(buttonLabel))
-	sb.WriteString("  ")
-	sb.WriteString(styles.Muted.Render("Tab/Enter"))
-
-	// Error message if any
-	if p.commitError != "" {
-		sb.WriteString("\n")
-		sb.WriteString(styles.StatusDeleted.Render("✗ " + p.commitError))
-	}
-
-	// Progress indicator
-	if p.commitInProgress {
-		sb.WriteString("\n")
-		progressText := "Committing..."
-		if p.commitAmend {
-			progressText = "Amending..."
+func (p *Plugin) commitStatusSection() modal.Section {
+	return modal.Custom(func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+		lines := make([]string, 0, 2)
+		if p.commitError != "" {
+			lines = append(lines, styles.StatusDeleted.Render("✗ "+p.commitError))
 		}
-		sb.WriteString(styles.Muted.Render(progressText))
-	}
-
-	sb.WriteString("\n")
-	sb.WriteString(styles.Muted.Render(strings.Repeat("─", contentWidth)))
-	sb.WriteString("\n")
-
-	// Footer keybindings
-	escKey := styles.KeyHint.Render(" Esc ")
-	commitKey := styles.KeyHint.Render(" ^S ")
-	sb.WriteString(escKey + " Cancel  " + commitKey + " Commit")
-
-	// Wrap in modal box
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.Primary).
-		Padding(1, 2).
-		Width(modalWidth).
-		Render(sb.String())
+		if p.commitInProgress {
+			progressText := "Committing..."
+			if p.commitAmend {
+				progressText = "Amending..."
+			}
+			lines = append(lines, styles.Muted.Render(progressText))
+		}
+		return modal.RenderedSection{Content: strings.Join(lines, "\n")}
+	}, nil)
 }
 
 // renderCommitModal renders the commit modal overlaid on the status view.
 func (p *Plugin) renderCommitModal() string {
-	// Render background (three-pane view)
 	background := p.renderThreePaneView()
+	p.ensureCommitModal()
+	if p.commitModal == nil {
+		return background
+	}
 
-	// Get modal content
-	modalContent := p.renderCommit()
-
-	// Register hit region for commit button
-	p.registerCommitButtonHitRegion()
-
-	// Overlay on dimmed background
+	modalContent := p.commitModal.Render(p.width, p.height, p.mouseHandler)
 	return ui.OverlayModal(background, modalContent, p.width, p.height)
-}
-
-// registerCommitButtonHitRegion registers mouse hit region for the commit button.
-func (p *Plugin) registerCommitButtonHitRegion() {
-	modalWidth := p.commitModalWidth()
-
-	// Calculate modal position (centered)
-	modalHeight := p.estimateCommitModalHeight()
-	startX := (p.width - modalWidth) / 2
-	startY := (p.height - modalHeight) / 2
-	if startX < 0 {
-		startX = 0
-	}
-	if startY < 0 {
-		startY = 0
-	}
-
-	// Button is near the bottom of the modal content
-	// Modal adds: border(1) + padding(1) = 2 on top
-	// Content: header(2) + staged section + blank + textarea(4) + button line
-	// Estimate button Y position
-	stagedCount := len(p.tree.Staged)
-	maxFiles := 8
-	if p.height < 30 {
-		maxFiles = 6
-	}
-	if p.height < 24 {
-		maxFiles = 4
-	}
-	displayedFiles := stagedCount
-	if displayedFiles > maxFiles {
-		displayedFiles = maxFiles + 1 // +1 for "... +N more" line
-	}
-
-	// Lines: header(2) + staged label(1) + files + blank(1) + textarea(4) + newline(1) + button
-	// The +1 at end accounts for newline after textarea creating a blank line
-	buttonLineY := startY + 2 + 2 + 1 + displayedFiles + 1 + 4 + 1
-
-	// Button X: startX + border(1) + padding(2) = content start
-	buttonX := startX + 3
-
-	// Button width: label + padding(4) from Button style
-	buttonLabel := " Commit "
-	if p.commitAmend {
-		buttonLabel = " Amend "
-	}
-	buttonWidth := len(buttonLabel) + 4
-
-	p.mouseHandler.HitMap.Clear()
-	p.mouseHandler.HitMap.AddRect(regionCommitButton, buttonX, buttonLineY, buttonWidth, 1, nil)
 }
