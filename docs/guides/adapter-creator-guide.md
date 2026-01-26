@@ -70,7 +70,7 @@ const (
 )
 ```
 
-Pick a stable `adapterID` (it becomes part of persisted UI state like filters).
+Pick a stable `adapterID` (it becomes part of persisted UI state like filters). Use hyphens for multi-word IDs (e.g., `gemini-cli`, `claude-code`, not `geminicli`).
 
 ### 2) Define adapter icon
 
@@ -82,7 +82,7 @@ func (a *Adapter) Icon() string { return "◆" }
 
 Icon guidelines:
 - Use non-emoji Unicode symbols (◆ ▶ ★ ◇ ▲ ■ etc.)
-- Avoid emojis for terminal compatibility
+- Avoid emojis: some terminals render them with double width, breaking column alignment. Use Unicode symbols that render as single-width.
 - Pick something visually distinct from existing adapters
 - Icon appears in conversation list badges
 
@@ -94,7 +94,7 @@ Existing icons:
 | codex       | ▶    |
 | gemini-cli  | ★    |
 | cursor-cli  | ▌    |
-| warp        | ⚡   |
+| warp        | »    |
 | opencode    | ◇    |
 
 ### 3) Implement Detect
@@ -122,7 +122,7 @@ Return ordered `adapter.Message` values with:
 - `ToolUses`: tool calls and outputs
 - `ThinkingBlocks`: reasoning summaries (if present)
 - `TokenUsage`: map token_count events to the next assistant message
-- `Model`: from your session metadata
+- `Model`: from your session metadata. If the session format doesn't include model info, use the adapter's default model or an empty string.
 
 ### 6) Implement Usage
 
@@ -157,6 +157,27 @@ And ensure the package is imported (blank import) in `cmd/sidecar/main.go`:
 import (
 	_ "github.com/marcus/sidecar/internal/adapter/myadapter"
 )
+```
+
+### 9) Error handling patterns
+
+Follow these conventions for graceful degradation:
+
+- **Detect()**: Return `(false, nil)` if the data directory doesn't exist. Only return an error for unexpected I/O failures.
+- **Sessions()**: Return an empty slice if the directory is inaccessible or empty. Only return an error for data corruption or parse failures that indicate a broken state.
+- **Messages()**: Return `nil` if the session file is missing (session may have been deleted). Only return an error on parse failures.
+- **Watch()**: Return `(nil, nil, error)` if filesystem operations fail. The caller handles nil channels gracefully.
+
+```go
+func (a *Adapter) Detect(projectRoot string) (bool, error) {
+    dataDir := filepath.Join(homeDir, ".myai", "sessions")
+    if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+        return false, nil // no data dir = not detected, not an error
+    } else if err != nil {
+        return false, err // unexpected I/O error
+    }
+    // ... check for project-specific sessions
+}
 ```
 
 ## UI Integration Notes
@@ -449,6 +470,25 @@ resolved, _ := filepath.Abs(projectRoot)
 resolved, _ = filepath.EvalSymlinks(resolved)
 for _, meta := range sessions {
     if resolved == meta.CWD { ... }
+}
+```
+
+### Thread Safety
+
+Adapter instances are singletons. Protect shared mutable state with mutexes. The cache package is thread-safe; use it for hot paths.
+
+```go
+type Adapter struct {
+    mu        sync.RWMutex
+    pathIndex map[string]string  // mutable state needs protection
+    metaCache *cache.Cache[SessionMetadata]  // cache package is thread-safe
+}
+
+func (a *Adapter) Sessions(projectRoot string) ([]adapter.Session, error) {
+    a.mu.RLock()
+    // ... read from pathIndex
+    a.mu.RUnlock()
+    // ... use metaCache without mutex (it's thread-safe)
 }
 ```
 

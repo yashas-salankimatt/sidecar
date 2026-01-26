@@ -128,34 +128,41 @@ func GetMyPluginState(workdir string) MyPluginState {
 
 When a worktree is deleted externally, plugins should detect this and request fallback to main.
 
-### Detection Pattern
+### Message vs Command Flow
 
-Check if WorkDir exists during refresh operations:
+Understanding the distinction between messages and commands is important:
+
+- **Messages** (`tea.Msg`): Data types passed through Bubble Tea's `Update()` method
+- **Commands** (`tea.Cmd`): Functions that return messages, executed asynchronously
+
+The worktree deletion flow uses both:
+1. Plugin defines a local message type (e.g., `WorkDirDeletedMsg`)
+2. Plugin detects deletion in a command, returns the message
+3. Plugin handles the message in `Update()`, returns an app-level command
+4. App handles the command's resulting message to perform the switch
+
+### App-Level Commands (internal/app/commands.go)
 
 ```go
-func (p *Plugin) refresh() tea.Cmd {
-    workDir := p.ctx.WorkDir
+// SwitchWorktreeMsg requests switching to a different worktree.
+type SwitchWorktreeMsg struct {
+    WorktreePath string // Absolute path to the worktree
+}
+
+// SwitchWorktree returns a command that requests switching to a worktree by path.
+func SwitchWorktree(path string) tea.Cmd {
     return func() tea.Msg {
-        if _, err := os.Stat(workDir); os.IsNotExist(err) {
-            mainPath := app.GetMainWorktreePath(workDir)
-            if mainPath != "" {
-                return app.SwitchToMainWorktreeMsg{MainWorktreePath: mainPath}
-            }
-        }
-        // Normal refresh logic...
+        return SwitchWorktreeMsg{WorktreePath: path}
     }
 }
-```
 
-### SwitchToMainWorktreeMsg
-
-Defined in `internal/app/commands.go`:
-
-```go
+// SwitchToMainWorktreeMsg requests switching to the main worktree.
+// Sent when the current WorkDir (a worktree) has been deleted.
 type SwitchToMainWorktreeMsg struct {
-    MainWorktreePath string
+    MainWorktreePath string // Path to the main worktree to switch to
 }
 
+// SwitchToMainWorktree returns a command that requests switching to the main worktree.
 func SwitchToMainWorktree(mainPath string) tea.Cmd {
     return func() tea.Msg {
         return SwitchToMainWorktreeMsg{MainWorktreePath: mainPath}
@@ -163,7 +170,60 @@ func SwitchToMainWorktree(mainPath string) tea.Cmd {
 }
 ```
 
-The app handles this by switching to main and showing a toast.
+The app handles `SwitchToMainWorktreeMsg` by switching to main and showing a toast.
+
+### Real-World Example: Workspace Plugin
+
+The workspace plugin demonstrates the complete deleted worktree pattern:
+
+**1. Define plugin-local message (`internal/plugins/workspace/worktree.go`):**
+```go
+// WorkDirDeletedMsg signals that the current working directory was deleted.
+// This happens when sidecar is running inside a worktree that gets deleted.
+type WorkDirDeletedMsg struct {
+    MainWorktreePath string
+}
+```
+
+**2. Detect deletion in refresh command:**
+```go
+func (p *Plugin) refreshWorktrees() tea.Cmd {
+    workDir := p.ctx.WorkDir
+    return func() tea.Msg {
+        // Check if current WorkDir still exists (may have been a deleted worktree)
+        if _, err := os.Stat(workDir); os.IsNotExist(err) {
+            // WorkDir was deleted - find main worktree to switch to
+            mainPath := findMainWorktreeFromDeleted(workDir)
+            if mainPath != "" {
+                return WorkDirDeletedMsg{MainWorktreePath: mainPath}
+            }
+        }
+        // Normal refresh logic...
+        return RefreshDoneMsg{Worktrees: worktrees, Err: err}
+    }
+}
+```
+
+**3. Handle message in Update(), return app command:**
+```go
+case WorkDirDeletedMsg:
+    // Current working directory (a worktree) was deleted - request switch to main repo
+    p.refreshing = false
+    if msg.MainWorktreePath != "" {
+        return p, app.SwitchToMainWorktree(msg.MainWorktreePath)
+    }
+    return p, nil
+```
+
+### Inter-Plugin Communication
+
+All plugins receive all messages via `tea.Msg` broadcast. This means:
+- Your plugin will see messages from other plugins
+- Use type switches to filter only messages you care about
+- Plugin-specific messages should be defined in that plugin's package
+- App-level messages (like `SwitchWorktreeMsg`) are defined in `internal/app/commands.go`
+
+For more details on inter-plugin communication patterns, see `CLAUDE.md`.
 
 ## Git Helpers
 
@@ -187,6 +247,14 @@ The following state is persisted per WorkDir:
 | `Workspace` | Workspace/shell selections |
 
 State is saved to `~/.config/sidecar/state.json` and keyed by absolute WorkDir path.
+
+**Note:** State accessors in `internal/state/state.go` take `workdir` as a parameter:
+```go
+func GetMyPluginState(workdir string) MyPluginState
+func SetMyPluginState(workdir string, state MyPluginState)
+```
+
+This means state is automatically per-worktree when you pass `p.ctx.WorkDir`. When switching worktrees, the new WorkDir naturally retrieves different state without any additional logic.
 
 ## Best Practices
 

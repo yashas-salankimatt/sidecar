@@ -11,7 +11,7 @@ Conversations are stored in per-session SQLite databases:
 ```
 
 - **workspace-hash**: MD5 hash of the absolute project path (32 hex chars)
-- **session-id**: UUID of the conversation session
+- **session-id**: UUID of the conversation session (the directory name IS the session UUID)
 
 **Example**:
 ```
@@ -172,9 +172,9 @@ Start with `0x0A 0x20` bytes. Contain references to child blobs.
 
 ### All Assistant Messages Have id="1"
 
-**Critical**: Cursor stores all assistant messages with `"id": "1"` in the JSON. This causes cache collisions if used as a unique identifier.
+**Critical**: Cursor stores all assistant messages with `"id": "1"` in the JSON. This is a Cursor-specific quirk - all assistant messages share the same internal ID. This causes cache collisions if used as a unique identifier.
 
-**Solution**: Use the blob hash (database `id` column) as the message ID instead:
+**Solution**: Use the blob hash (database `id` column) as the message ID instead. The codebase works around this by using the blob hash as the message identifier:
 ```go
 // Use blob hash for uniqueness, not internal JSON id
 msgID := blobID[:8]  // Short hash for display
@@ -190,6 +190,10 @@ Tool results can be a string or array of content blocks:
 // Array format
 "result": [{"type": "text", "text": "line 1"}, {"type": "text", "text": "line 2"}]
 ```
+
+### System-Context Messages Filtered
+
+During parsing, messages that contain only system context (no user content) are skipped. This filters out messages that are purely metadata or context-setting without meaningful conversation content.
 
 ### User Query Extraction
 

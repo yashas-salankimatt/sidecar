@@ -4,36 +4,86 @@ Implementation guide for the project switcher modal (`@` hotkey).
 
 ## Architecture Overview
 
-The project switcher is an app-level modal in `internal/app/`. It consists of:
+The project switcher uses the app's declarative **modal library** (`internal/modal/`) for rendering and mouse handling. This abstracts away raw coordinate calculations and provides a sectioned builder pattern for content.
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| Model state | `model.go:47-53` | Modal visibility, cursor, scroll, filter |
-| Init/reset | `model.go:346-404` | State initialization and cleanup |
-| Keyboard | `update.go:385-488` | Key event handling |
-| Mouse | `update.go:697-811` | Click, scroll, hover |
-| View | `view.go:108-258` | Modal rendering |
-| Project switch | `model.go:406-440` | Plugin context reinit |
+| Component | File | Line | Purpose |
+|-----------|------|------|---------|
+| Model state | `model.go` | 104-112 | Modal visibility, cursor, scroll, filter, modal cache |
+| resetProjectSwitcher | `model.go` | 413 | State cleanup when modal closes |
+| initProjectSwitcher | `model.go` | 433 | State initialization when modal opens |
+| filterProjects | `model.go` | 457 | Case-insensitive project filtering |
+| switchProject | `model.go` | 485 | Plugin context reinitialization |
+| previewProjectTheme | `model.go` | 580 | Live theme preview during selection |
+| ensureProjectSwitcherModal | `view.go` | 114 | Lazy modal building/caching |
+| projectSwitcherItemID | `view.go` | 29 | Mouse click ID generation |
+| Keyboard handling | `update.go` | 600-690 | Key event processing |
+| Mouse handling | `update.go` | 1073-1115 | Mouse event processing via modal library |
+| View rendering | `view.go` | 139-358 | Sectioned modal content |
+
+## Modal Library Integration
+
+The project switcher uses `internal/modal/` for declarative modal rendering. Key concepts:
+
+### Modal Builder Pattern
+
+```go
+m.projectSwitcherModal = modal.New("Switch Project",
+    modal.WithWidth(modalW),
+    modal.WithHints(false),
+).
+    AddSection(m.projectSwitcherInputSection()).   // Filter input
+    AddSection(m.projectSwitcherCountSection()).   // "N of M projects"
+    AddSection(m.projectSwitcherListSection()).    // Scrollable project list
+    AddSection(m.projectSwitcherHintsSection())    // Keyboard hints
+```
+
+### Section Types
+
+| Type | Factory | Purpose |
+|------|---------|---------|
+| Input | `modal.Input()` | Text input with focus handling |
+| Custom | `modal.Custom()` | Escape hatch for complex content |
+| Text | `modal.Text()` | Static text |
+| Buttons | `modal.Buttons()` | Button row |
+
+### Custom Section Pattern
+
+Custom sections receive `contentWidth`, `focusID`, and `hoverID` for context-aware rendering:
+
+```go
+modal.Custom(func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+    // Render content
+    // Return focusables for mouse hit regions
+    return modal.RenderedSection{
+        Content:    renderedString,
+        Focusables: []modal.FocusableInfo{...},
+    }
+}, updateFn)
+```
 
 ## Model State
 
 ```go
-// internal/app/model.go
+// internal/app/model.go:104-112
 
 // Project switcher modal
-showProjectSwitcher      bool                    // Modal visibility
-projectSwitcherCursor    int                     // Selected index in filtered list
-projectSwitcherScroll    int                     // Scroll offset for long lists
-projectSwitcherHover     int                     // Mouse hover index (-1 = none)
-projectSwitcherInput     textinput.Model         // Filter text input
-projectSwitcherFiltered  []config.ProjectConfig  // Filtered project list
+showProjectSwitcher         bool
+projectSwitcherCursor       int
+projectSwitcherScroll       int // scroll offset for list
+projectSwitcherInput        textinput.Model
+projectSwitcherFiltered     []config.ProjectConfig
+projectSwitcherModal        *modal.Modal           // Cached modal instance
+projectSwitcherModalWidth   int                    // Width for cache invalidation
+projectSwitcherMouseHandler *mouse.Handler         // Mouse hit region handler
 ```
+
+Note: Hover state is managed by the modal library through `hoverID` string, not a separate field.
 
 ## Initialization
 
 ### Opening the Modal
 
-When `@` is pressed (`update.go:554`):
+When `@` is pressed (`update.go`):
 
 ```go
 case "@":
@@ -49,10 +99,11 @@ case "@":
 
 ### initProjectSwitcher()
 
-`model.go:356-376` - Sets up the modal state:
+`model.go:433-454` - Sets up the modal state:
 
 ```go
 func (m *Model) initProjectSwitcher() {
+    m.clearProjectSwitcherModal()  // Invalidate cached modal
     ti := textinput.New()
     ti.Placeholder = "Filter projects..."
     ti.Focus()
@@ -62,7 +113,6 @@ func (m *Model) initProjectSwitcher() {
     m.projectSwitcherFiltered = m.cfg.Projects.List
     m.projectSwitcherCursor = 0
     m.projectSwitcherScroll = 0
-    m.projectSwitcherHover = -1
 
     // Pre-select current project
     for i, proj := range m.projectSwitcherFiltered {
@@ -71,28 +121,91 @@ func (m *Model) initProjectSwitcher() {
             break
         }
     }
+    // Preview the initially-selected project's theme
+    m.previewProjectTheme()
 }
 ```
 
 ### resetProjectSwitcher()
 
-`model.go:346-354` - Cleans up when modal closes:
+`model.go:413-423` - Cleans up when modal closes:
 
 ```go
 func (m *Model) resetProjectSwitcher() {
     m.showProjectSwitcher = false
-    m.activeContext = ""
-    m.projectSwitcherInput = textinput.Model{}
     m.projectSwitcherCursor = 0
     m.projectSwitcherScroll = 0
-    m.projectSwitcherHover = -1
     m.projectSwitcherFiltered = nil
+    m.clearProjectSwitcherModal()
+    m.resetProjectAdd()
+    // Restore current project's theme (undo any live preview)
+    resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)
+    theme.ApplyResolved(resolved)
 }
 ```
 
+## Modal Caching
+
+The modal is lazily built and cached to avoid rebuilding on every render.
+
+### ensureProjectSwitcherModal()
+
+`view.go:114-137` - Builds modal only when needed:
+
+```go
+func (m *Model) ensureProjectSwitcherModal() {
+    modalW := 60
+    if modalW > m.width-4 {
+        modalW = m.width - 4
+    }
+    if modalW < 20 {
+        modalW = 20
+    }
+
+    // Only rebuild if modal doesn't exist or width changed
+    if m.projectSwitcherModal != nil && m.projectSwitcherModalWidth == modalW {
+        return
+    }
+    m.projectSwitcherModalWidth = modalW
+
+    m.projectSwitcherModal = modal.New("Switch Project", ...).
+        AddSection(...)
+}
+```
+
+### clearProjectSwitcherModal()
+
+`model.go:426-430` - Clears cache to force rebuild:
+
+```go
+func (m *Model) clearProjectSwitcherModal() {
+    m.projectSwitcherModal = nil
+    m.projectSwitcherModalWidth = 0
+    m.projectSwitcherMouseHandler = nil
+}
+```
+
+Call this when content changes (e.g., filter input, cursor movement with scroll).
+
+## Mouse Click IDs
+
+### projectSwitcherItemID()
+
+`view.go:29-31` - Generates unique IDs for mouse click detection:
+
+```go
+const projectSwitcherItemPrefix = "project-switcher-item-"
+
+func projectSwitcherItemID(idx int) string {
+    return fmt.Sprintf("%s%d", projectSwitcherItemPrefix, idx)
+}
+```
+
+These IDs are registered as focusables in the list section and returned by `modal.HandleMouse()` on click.
+
 ## Keyboard Handling
 
-All keyboard logic is in `update.go:385-488`.
+Keyboard logic is in `update.go:600-690`.
 
 ### Key Priority
 
@@ -103,20 +216,19 @@ All keyboard logic is in `update.go:385-488`.
 
 2. **String switch** (`msg.String()`) - Handles named keys:
    - `ctrl+n/ctrl+p` - Emacs-style navigation
-   - `@` - Close modal
 
-3. **Fallthrough** - All other keys forwarded to textinput (including printable characters)
+3. **Fallthrough** - All other keys forwarded to textinput
 
 ### Esc Behavior
 
-Esc has two behaviors (`update.go:400-411`):
+Esc has two behaviors:
 
 ```go
 case tea.KeyEsc:
     // Clear filter if set
     if m.projectSwitcherInput.Value() != "" {
         m.projectSwitcherInput.SetValue("")
-        m.projectSwitcherFiltered = allProjects
+        m.projectSwitcherFiltered = m.cfg.Projects.List
         m.projectSwitcherCursor = 0
         m.projectSwitcherScroll = 0
         return m, nil
@@ -129,7 +241,7 @@ case tea.KeyEsc:
 
 ### Navigation with Scroll
 
-Navigation updates cursor and ensures visibility (`update.go:423-440`):
+Navigation updates cursor and ensures visibility:
 
 ```go
 case tea.KeyDown:
@@ -142,21 +254,22 @@ case tea.KeyDown:
     }
     m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(
         m.projectSwitcherCursor, m.projectSwitcherScroll, 8)
+    m.previewProjectTheme()
     return m, nil
 ```
 
 ### Filter Input
 
-Keys not matching special cases go to textinput (`update.go:471-486`):
+Keys not matching special cases go to textinput:
 
 ```go
-// Forward to text input
+// Forward other keys to text input for filtering
 var cmd tea.Cmd
 m.projectSwitcherInput, cmd = m.projectSwitcherInput.Update(msg)
 
-// Re-filter on change
+// Re-filter on input change
 m.projectSwitcherFiltered = filterProjects(allProjects, m.projectSwitcherInput.Value())
-m.projectSwitcherHover = -1  // Clear hover on filter change
+m.clearProjectSwitcherModal() // Clear modal cache on filter change
 
 // Clamp cursor to valid range
 if m.projectSwitcherCursor >= len(m.projectSwitcherFiltered) {
@@ -165,13 +278,16 @@ if m.projectSwitcherCursor >= len(m.projectSwitcherFiltered) {
 if m.projectSwitcherCursor < 0 {
     m.projectSwitcherCursor = 0
 }
+m.projectSwitcherScroll = 0
+m.projectSwitcherScroll = projectSwitcherEnsureCursorVisible(...)
+m.previewProjectTheme()
 ```
 
 ## Filtering
 
 ### filterProjects()
 
-`model.go:378-392` - Case-insensitive substring match:
+`model.go:457-470` - Case-insensitive substring match:
 
 ```go
 func filterProjects(all []config.ProjectConfig, query string) []config.ProjectConfig {
@@ -194,7 +310,7 @@ Searches both `Name` and `Path` fields.
 
 ### Scroll Helper
 
-`model.go:394-404` - Keeps cursor in visible window:
+`model.go:474-482` - Keeps cursor in visible window:
 
 ```go
 func projectSwitcherEnsureCursorVisible(cursor, scroll, maxVisible int) int {
@@ -210,170 +326,211 @@ func projectSwitcherEnsureCursorVisible(cursor, scroll, maxVisible int) int {
 
 ## Mouse Handling
 
-Mouse logic is in `update.go:697-811`.
+Mouse handling uses the modal library's abstraction (`update.go:1073-1115`).
 
-### Layout Calculation
-
-The modal layout for hit detection (`update.go:718-740`):
+### Modal Library Integration
 
 ```go
-// Modal content lines: title + input + count + projects + help
-modalContentLines := 2 + 1 + 1 + visibleCount*2 + 2
-if m.projectSwitcherScroll > 0 {
-    modalContentLines++ // scroll indicator above
-}
-if len(projects) > m.projectSwitcherScroll+visibleCount {
-    modalContentLines++ // scroll indicator below
-}
+func (m Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+    m.ensureProjectSwitcherModal()
+    if m.projectSwitcherModal == nil {
+        return m, nil
+    }
+    if m.projectSwitcherMouseHandler == nil {
+        m.projectSwitcherMouseHandler = mouse.NewHandler()
+    }
 
-// ModalBox adds padding and border (~2 on each side)
-modalHeight := modalContentLines + 4
-modalWidth := 50
-modalX := (m.width - modalWidth) / 2
-modalY := (m.height - modalHeight) / 2
-```
+    // Let modal library handle all mouse events
+    action := m.projectSwitcherModal.HandleMouse(msg, m.projectSwitcherMouseHandler)
 
-### Click Detection
-
-Project click detection (`update.go:749-776`):
-
-```go
-// Content starts at modalY + 2 (border + padding)
-// Title: 2 lines, Input: 1 line, Count: 1 line
-contentStartY := modalY + 2 + 2 + 1 + 1
-if m.projectSwitcherScroll > 0 {
-    contentStartY++ // scroll indicator
-}
-
-// Each project takes 2 lines (name + path)
-relY := msg.Y - contentStartY
-if relY >= 0 && relY < visibleCount*2 {
-    projectIdx := m.projectSwitcherScroll + relY/2
-    // Handle click...
+    // Check if action is a project item click
+    if strings.HasPrefix(action, projectSwitcherItemPrefix) {
+        var idx int
+        if _, err := fmt.Sscanf(action, projectSwitcherItemPrefix+"%d", &idx); err == nil {
+            projects := m.projectSwitcherFiltered
+            if idx >= 0 && idx < len(projects) {
+                selectedProject := projects[idx]
+                m.resetProjectSwitcher()
+                m.updateContext()
+                return m, m.switchProject(selectedProject.Path)
+            }
+        }
+    }
+    // ... handle other actions
 }
 ```
 
 ### Hover State
 
-Mouse motion updates hover index (`update.go:772-781`):
+Hover is managed by the modal library through `hoverID` string, passed to section render functions:
 
 ```go
-case tea.MouseActionMotion:
-    m.projectSwitcherHover = projectIdx
-```
-
-Hover is cleared when:
-- Mouse moves outside project list area
-- Filter changes (ensures no invalid index)
-- Modal closes
-
-### Scroll Wheel
-
-Wheel events move cursor and scroll (`update.go:784-804`):
-
-```go
-case tea.MouseButtonWheelUp:
-    m.projectSwitcherCursor--
-    // clamp and update scroll
-case tea.MouseButtonWheelDown:
-    m.projectSwitcherCursor++
-    // clamp and update scroll
+func (m *Model) projectSwitcherListSection() modal.Section {
+    return modal.Custom(func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+        // ...
+        itemID := projectSwitcherItemID(i)
+        isHovered := itemID == hoverID  // Check hover via hoverID string
+        // Apply hover styling...
+    }, m.projectSwitcherListUpdate)
+}
 ```
 
 ## View Rendering
 
-View logic is in `view.go:108-258`.
+View logic is in `view.go:139-358`.
 
-### Modal Structure
+### Sectioned Modal Structure
 
 ```
-┌─────────────────────────────────────────┐
-│ Switch Project  @                       │  <- Title (2 lines)
-│                                         │
-│ [Filter projects...                  ]  │  <- Input (1 line)
-│ 3 of 10 projects                        │  <- Count (1 line, only when filtering)
-│   ↑ 2 more above                        │  <- Scroll indicator (optional)
-│ → sidecar                               │  <- Project name (cursor/hover)
-│   ~/code/sidecar                        │  <- Project path
-│   td (current)                          │  <- Current project (green)
-│   ~/code/td                             │
-│   ↓ 5 more below                        │  <- Scroll indicator (optional)
-│                                         │
-│ esc clear  @ close                      │  <- Help hints
-└─────────────────────────────────────────┘
++-------------------------------------------+
+| Switch Project                            |  <- Title (from modal.New)
+|                                           |
+| [Filter projects...                    ]  |  <- Input section
+| 3 of 10 projects                          |  <- Count section
+|   ^ 2 more above                          |  <- List section (scroll indicator)
+| > sidecar                                 |  <- List section (cursor item)
+|   ~/code/sidecar                          |
+|   td (current)                            |  <- List section (current project)
+|   ~/code/td                               |
+|   v 5 more below                          |  <- List section (scroll indicator)
+|                                           |
+| enter switch  up/down navigate  esc close |  <- Hints section
++-------------------------------------------+
+```
+
+### List Section with Focusables
+
+Each project registers a focusable for mouse hit detection (`view.go:160-257`):
+
+```go
+func (m *Model) projectSwitcherListSection() modal.Section {
+    return modal.Custom(func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+        var b strings.Builder
+        focusables := make([]modal.FocusableInfo, 0, visibleCount)
+
+        for i := scrollOffset; i < scrollOffset+visibleCount && i < len(projects); i++ {
+            itemID := projectSwitcherItemID(i)
+            isHovered := itemID == hoverID
+
+            // Render project with hover/cursor styling...
+
+            // Register focusable for mouse clicks
+            focusables = append(focusables, modal.FocusableInfo{
+                ID:      itemID,
+                OffsetX: 0,
+                OffsetY: lineOffset + (i-scrollOffset)*2,
+                Width:   contentWidth,
+                Height:  2,  // name + path = 2 lines
+            })
+        }
+
+        return modal.RenderedSection{Content: b.String(), Focusables: focusables}
+    }, m.projectSwitcherListUpdate)
+}
 ```
 
 ### Empty States
 
-Two empty states exist:
+Two empty states exist (`view.go:169-178`):
 
-1. **No projects configured** (`view.go:120-139`) - Shows config example
-2. **No filter matches** (`view.go:152-164`) - Shows "No matches" with hints
+1. **No projects configured** - Shows muted "No projects configured" text
+2. **No filter matches** - Shows "No matches"
 
 ### Project Item Styling
 
-Each project has conditional styling (`view.go:209-227`):
+Each project has conditional styling based on cursor, hover, and current state:
 
-| State | Name Style | Path Style |
-|-------|------------|------------|
-| Normal | Secondary (blue) | Subtle |
-| Cursor/Hover | Primary + Bold | Muted |
-| Current | Success (green) + Bold | Subtle |
-| Current + Selected | Success + Bold | Muted |
+| State | Name Style |
+|-------|------------|
+| Normal | Secondary (blue) |
+| Cursor or Hover | Primary + Bold |
+| Current | Success (green) + Bold |
 
 Current project shows "(current)" label.
 
-### Scroll Indicators
+## Theme Preview
 
-Show when list overflows (`view.go:176-179`, `247-249`):
+### previewProjectTheme()
+
+`model.go:580-586` - Live preview during selection:
 
 ```go
-if scrollOffset > 0 {
-    b.WriteString(styles.Muted.Render(fmt.Sprintf("  ↑ %d more above\n", scrollOffset)))
-}
-// ... render projects ...
-if remaining > 0 {
-    b.WriteString(styles.Muted.Render(fmt.Sprintf("  ↓ %d more below\n", remaining)))
+func (m *Model) previewProjectTheme() {
+    projects := m.projectSwitcherFiltered
+    if m.projectSwitcherCursor >= 0 && m.projectSwitcherCursor < len(projects) {
+        resolved := theme.ResolveTheme(m.cfg, projects[m.projectSwitcherCursor].Path)
+        theme.ApplyResolved(resolved)
+    }
 }
 ```
+
+Called on:
+- Modal initialization (preview current project's theme)
+- Cursor movement (preview newly selected project's theme)
+- Filter changes (preview first match's theme)
+
+Theme is restored to current project's theme in `resetProjectSwitcher()`.
 
 ## Project Switching
 
 ### switchProject()
 
-`model.go:406-440` - Handles the actual switch:
+`model.go:485-577` - Handles the actual switch:
 
 ```go
 func (m *Model) switchProject(projectPath string) tea.Cmd {
     // Skip if same project
     if projectPath == m.ui.WorkDir {
-        return m.toast("Already on this project")
+        return func() tea.Msg {
+            return ToastMsg{Message: "Already on this project", Duration: 2 * time.Second}
+        }
     }
 
-    return func() tea.Msg {
-        // 1. Stop all plugins
-        m.registry.Stop()
-
-        // 2. Update working directory
-        m.ui.WorkDir = projectPath
-
-        // 3. Reinitialize plugins
-        m.registry.Reinit(plugin.Context{
-            WorkDir: projectPath,
-            // ...
-        })
-
-        // 4. Restore active plugin for this project
-        // 5. Show toast notification
-
-        return ProjectSwitchedMsg{Path: projectPath}
+    // Save active plugin state for old workdir
+    oldWorkDir := m.ui.WorkDir
+    if activePlugin := m.ActivePlugin(); activePlugin != nil {
+        state.SetActivePlugin(oldWorkDir, activePlugin.ID())
     }
+
+    // Check for saved worktree to restore
+    // ... worktree restoration logic ...
+
+    // Update UI state
+    m.ui.WorkDir = targetPath
+    m.intro.RepoName = GetRepoName(targetPath)
+
+    // Apply project-specific theme
+    resolved := theme.ResolveTheme(m.cfg, targetPath)
+    theme.ApplyResolved(resolved)
+
+    // Reinitialize all plugins
+    startCmds := m.registry.Reinit(targetPath)
+
+    // Send WindowSizeMsg to plugins for layout recalculation
+    // ... size message broadcasting ...
+
+    // Restore active plugin for new workdir
+    newActivePluginID := state.GetActivePlugin(targetPath)
+    if newActivePluginID != "" {
+        m.FocusPluginByID(newActivePluginID)
+    }
+
+    // Return batch with toast notification
+    return tea.Batch(
+        tea.Batch(startCmds...),
+        func() tea.Msg {
+            return ToastMsg{
+                Message:  fmt.Sprintf("Switched to %s", GetRepoName(targetPath)),
+                Duration: 3 * time.Second,
+            }
+        },
+    )
 }
 ```
 
 ### Plugin Reinitialization
 
-When switching projects, plugins receive a new `Init()` call. Plugins must reset their state - see `internal/plugins/workspace/plugin.go:259-265` for an example of proper state reset.
+When switching projects, plugins receive a new `Init()` call via `m.registry.Reinit()`. Plugins must reset their state appropriately.
 
 ## Adding New Features
 
@@ -392,7 +549,7 @@ case "ctrl+d":
 
 1. Extend `config.ProjectConfig` in `internal/config/types.go`
 2. Update `filterProjects()` to search new fields
-3. Update view rendering to display new fields
+3. Update `projectSwitcherListSection()` to display new fields
 
 ### Changing Filter Algorithm
 
@@ -401,6 +558,29 @@ Replace `filterProjects()` body. Current: substring match. Options:
 - Regex support
 - Field-specific search (`name:foo`)
 
+### Adding a New Section
+
+1. Create a section function returning `modal.Section`:
+
+```go
+func (m *Model) projectSwitcherNewSection() modal.Section {
+    return modal.Custom(func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+        // Render content
+        return modal.RenderedSection{Content: "..."}
+    }, nil)
+}
+```
+
+2. Add to modal builder in `ensureProjectSwitcherModal()`:
+
+```go
+m.projectSwitcherModal = modal.New("Switch Project", ...).
+    AddSection(m.projectSwitcherInputSection()).
+    AddSection(m.projectSwitcherNewSection()).  // New section
+    AddSection(m.projectSwitcherListSection()).
+    // ...
+```
+
 ## Testing
 
 Currently no dedicated tests exist for the project switcher. Recommended test coverage:
@@ -408,24 +588,24 @@ Currently no dedicated tests exist for the project switcher. Recommended test co
 1. **filterProjects()** - Various query inputs
 2. **projectSwitcherEnsureCursorVisible()** - Scroll boundary cases
 3. **Keyboard navigation** - Cursor bounds, scroll sync
-4. **Mouse hit detection** - Click accuracy with scroll
-
-See `td-1a735359` for the test task.
+4. **Mouse click detection** - Via modal library integration
 
 ## Common Pitfalls
 
 1. **Forgetting updateContext()** - Call after closing modal to restore app context
-2. **Stale hover index** - Clear `projectSwitcherHover` when filter changes
+2. **Stale modal cache** - Call `clearProjectSwitcherModal()` when content changes
 3. **Cursor out of bounds** - Always clamp after filtering
-4. **Printable keys vs navigation** - Keep printable characters routed to textinput so filtering always works
-5. **Mouse Y calculation** - Account for scroll indicators and filter count line
+4. **Printable keys vs navigation** - Keep printable characters routed to textinput
+5. **Theme preview cleanup** - Always restore theme in `resetProjectSwitcher()`
+6. **Focusable coordinates** - Each project takes 2 lines (name + path)
 
 ## File Locations
 
 | File | Contents |
 |------|----------|
-| `internal/app/model.go` | State, init, reset, filter, switch |
+| `internal/app/model.go` | State, init, reset, filter, switch, theme preview |
 | `internal/app/update.go` | Keyboard and mouse handlers |
-| `internal/app/view.go` | Rendering |
+| `internal/app/view.go` | Modal building and section rendering |
+| `internal/modal/` | Modal library (builder, sections, layout) |
 | `internal/config/types.go` | ProjectConfig struct |
 | `internal/config/loader.go` | Config loading with path validation |

@@ -99,6 +99,8 @@ Stores usage metadata per conversation.
 
 Stores task lists created by AI agent. **Protobuf encoded**.
 
+**Note**: The agent_tasks table stores task lists in protobuf format. Currently, the Warp adapter does not decode these blobs. This section is provided as reference for future implementations or direct SQL exploration.
+
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | INTEGER | Primary key |
@@ -150,6 +152,8 @@ Terminal command blocks. Links to AI via `ai_metadata`.
 
 ## Model IDs
 
+**Note**: This is a non-exhaustive list of common models. The adapter uses `ModelDisplayNames` map for display, but Warp may report additional model variants. Unknown models display as-is from the database.
+
 | Warp Model ID | Display Name |
 |---------------|--------------|
 | `claude-4-5-opus` | Claude Opus 4.5 |
@@ -172,13 +176,19 @@ Not stored locally:
 
 ## Useful Queries
 
+### Important Query Notes
+- All queries must use read-only access to avoid disrupting the live database
+- Join ai_queries with agent_conversations when you need usage metrics
+- When querying blocks, note that `stylized_command` and `stylized_output` contain ANSI escape codes (strip with regex `\x1b\[[0-9;]*m`)
+
 ### List conversations by project
 ```sql
 SELECT DISTINCT conversation_id, working_directory, model_id,
        MIN(start_ts) as first_msg, MAX(start_ts) as last_msg,
        COUNT(*) as exchange_count
 FROM ai_queries
-WHERE working_directory LIKE '/path/to/project%'
+WHERE working_directory LIKE ? OR working_directory = ?
+-- With parameters: ('/path/to/project%', '/path/to/project')
 GROUP BY conversation_id
 ORDER BY last_msg DESC;
 ```
@@ -207,6 +217,12 @@ WHERE conversation_id = '<uuid>';
 | `projects` | Known project paths |
 | `workspace_metadata` | Workspace navigation history |
 | `mcp_server_installations` | MCP server configs |
+
+## Limitations
+
+- **No assistant responses stored**: Warp does not store AI response text locally
+- **Limited task data**: agent_tasks uses protobuf encoding and is not currently decoded
+- **Debounce on watch**: SQLite WAL watch debounces with 100ms delay
 
 ## File Watching
 

@@ -2,6 +2,15 @@
 
 Switch between git repositories without restarting sidecar.
 
+## Project vs Worktree Switching
+
+Sidecar supports two types of switching:
+
+- **Project Switching** (`@`): Switch between configured projects from `config.json` (arbitrary repos)
+- **Worktree Switching** (`W`): Switch between git worktrees within the current repository
+
+Project switching requires manual configuration but supports any directory. Worktree switching auto-discovers worktrees from the current git repo.
+
 ## Quick Start
 
 1. Add projects to `~/.config/sidecar/config.json`:
@@ -55,6 +64,7 @@ Paths support `~` expansion:
 | Key | Action |
 |-----|--------|
 | `@` | Open/close project switcher |
+| `W` | Open worktree switcher (for git worktrees) |
 
 ### Navigation
 
@@ -101,6 +111,29 @@ Sidecar remembers:
 
 These are saved per project path in `~/.config/sidecar/state.json`.
 
+## Worktree-Specific Behavior
+
+When using worktree switching (`W`):
+
+- **Deleted worktrees**: If a worktree is deleted externally, sidecar gracefully falls back to the main branch
+- **Last-active restoration**: When switching to a project's main repo, sidecar restores the last-active worktree
+- **Non-git repos**: Shows "No worktrees found" in non-git repos or repos with only the main branch
+
+## Per-Project Themes
+
+Projects can have individual themes:
+
+```json
+{
+  "projects": {
+    "list": [
+      {"name": "work", "path": "~/work/main", "theme": "dark"},
+      {"name": "personal", "path": "~/code/personal", "theme": "light"}
+    ]
+  }
+}
+```
+
 ## Troubleshooting
 
 ### "No projects configured" message
@@ -131,6 +164,14 @@ ls ~/code/myproject
 The current project is shown in green with "(current)" label. If not highlighted:
 - Check that the path in config exactly matches the current working directory
 - Paths are compared after `~` expansion
+
+### "No worktrees found" message
+
+This appears when pressing `W` in:
+- A non-git repository
+- A git repository with only the main branch (no additional worktrees)
+
+To use worktree switching, create worktrees with `git worktree add`.
 
 ### Switch seems to hang
 

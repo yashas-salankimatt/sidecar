@@ -13,6 +13,12 @@ both Go's pprof and system-level tools (macOS/Linux).
 | Goroutine leak | pprof goroutines | [Goroutine Profile](#goroutine-profile) |
 | Plugin unresponsive | lsof + goroutines | [Diagnosing Unresponsive Plugins](#diagnosing-unresponsive-plugins) |
 
+### Quick Triage Flowchart
+
+```
+Is RSS high? → Check FD count → Check vmmap → Check heap profile
+```
+
 ---
 
 ## System-Level Profiling (No pprof Required)
@@ -129,6 +135,8 @@ while true; do echo "$(date): $(lsof -p <PID> 2>/dev/null | wc -l) FDs"; sleep 3
 - Same file opened 4+ times = file handle not closed
 - Growing FD count over time = active leak
 
+**Shell mode debugging:** If FD count spikes during interactive mode, check the workspace plugin's shell polling. Rapid polling during active typing is expected but should settle down after inactivity.
+
 ### Thread / Goroutine Count
 
 ```bash
@@ -219,6 +227,9 @@ curl http://localhost:6060/debug/pprof/goroutine?debug=2 > goroutines.txt
 
 # Look for stuck goroutines
 grep -A5 'runtime.chanrecv' goroutines.txt
+
+# Filter for common blocking patterns (count of waiting goroutines)
+curl -s http://localhost:6060/debug/pprof/goroutine?debug=2 | grep -E 'runtime.chanrecv|time.Sleep' | wc -l
 ```
 
 #### Memory Stats
@@ -299,6 +310,8 @@ go tool pprof -http=:8080 http://localhost:6060/debug/pprof/heap
 ```
 
 This opens a browser with flame graphs, call graphs, and more.
+
+**Note:** Flame graph visualization requires Graphviz to be installed (`brew install graphviz` on macOS, `apt install graphviz` on Linux). Without it, the web UI will still work but flame graphs will not render.
 
 ### CPU Profile
 

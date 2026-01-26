@@ -7,7 +7,7 @@ All new modals must use the internal modal library. See `docs/guides/declarative
 - Modals: use `internal/modal`, render with `ui.OverlayModal`, avoid manual hit region math.
 - Keyboard: Commands + FocusContext + bindings match; names are short; priorities set.
 - Mouse: rebuild hit regions on each render; add general regions first, specific last.
-- Rendering: keep output within the View width and height to avoid header/footer overlap.
+- Rendering: keep output within the View width and height to avoid header/footer overlap. The plugin's View height parameter already accounts for the header. Use `contentHeight := height - linesTakenByYourHeaders - footerLines` to ensure content fits.
 - Testing: verify keyboard, mouse, hover, scrolling, and footer hints.
 
 ## Modals (internal/modal)
@@ -79,7 +79,9 @@ func (p *Plugin) ensureMyModal() {
     if modalW < 20 {
         modalW = 20  // Prevent negative/tiny widths
     }
-    // Only rebuild if modal doesn't exist or width changed
+    // Only rebuild if modal doesn't exist or width changed.
+    // Caching prevents rebuilding the modal every frame, which is critical
+    // for performance since View() is called on every render cycle.
     if p.myModal != nil && p.myModalWidthCache == modalW {
         return
     }
@@ -130,7 +132,14 @@ after Update in bubbletea).
 // 1) Commands()
 func (p *Plugin) Commands() []plugin.Command {
     return []plugin.Command{
-        {ID: "stage-file", Name: "Stage", Context: "git-status", Priority: 1},
+        {
+            ID:          "stage-file",
+            Name:        "Stage",
+            Description: "Stage selected file for commit",  // optional
+            Category:    plugin.CategoryGit,                // optional
+            Context:     "git-status",
+            Priority:    1,
+        },
     }
 }
 
@@ -150,7 +159,7 @@ func (p *Plugin) FocusContext() string {
 - Context precedence is plugin context first, then `global`.
 
 ### Footer hints and parity
-- The footer shows hints for Commands() in the active context, sorted by Priority (1 is highest).
+- Footer hints are sorted by Priority (1 is highest). Plugins can return different Command sets per context (e.g., "git-status" vs "git-status-commits").
 - Keep command names short (one word when possible) to avoid footer truncation.
 - Plugins must not render their own footer or hint line in View.
 - Match established patterns: Tab and Shift+Tab to switch panes, backslash to toggle sidebar, Esc to close modals, q to quit or go back depending on context.
@@ -165,7 +174,7 @@ func (p *Plugin) FocusContext() string {
 {Key: "j", Command: "cursor-down", Context: "global"}
 {Key: "G", Command: "cursor-bottom", Context: "global"}
 {Key: "ctrl+d", Command: "page-down", Context: "global"}
-{Key: "alt+enter", Command: "execute-commit", Context: "git-commit"}
+{Key: "ctrl+enter", Command: "execute-commit", Context: "git-commit"}
 {Key: "enter", Command: "select", Context: "global"}
 {Key: "esc", Command: "back", Context: "global"}
 {Key: "`", Command: "next-plugin", Context: "global"}

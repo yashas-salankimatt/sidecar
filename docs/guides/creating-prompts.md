@@ -37,6 +37,17 @@ Project prompts override global prompts with the same name.
 }
 ```
 
+## Default Prompts
+
+If no config file exists, the app automatically creates one with 5 built-in prompt templates:
+- Begin Work on Ticket (required)
+- Code Review Ticket (required)
+- Plan to Epic (No Impl) (none)
+- Plan to Epic + Implement (none)
+- TD Review Session (none)
+
+You can customize these by editing the config file. Press `d` in the prompt picker to install defaults if none are configured.
+
 ## Prompt Fields
 
 ### name (required)
@@ -73,6 +84,10 @@ Expands to task ID, or the fallback text if no task selected.
 // With task td-abc123: "Review td-abc123."
 // Without task: "Review all open items."
 ```
+
+Note: Only single quotes are supported for fallback text:
+- `{{ticket || 'default'}}` ✓ Works
+- `{{ticket || "default"}}` ✗ Won't work
 
 ## Examples
 
@@ -119,6 +134,13 @@ In the prompt picker, prompts show their source:
 - `[P]` - Project prompt (from `.sidecar/`)
 
 Project prompts take precedence when names match.
+
+## Important Notes
+
+- Prompt names must match exactly (case-sensitive) for project overrides to work
+- Only single quotes work in fallback syntax
+- The ticketMode field defaults to `optional` if omitted
+- Config files are loaded when creating a workspace; restart the app to reload changes
 
 ## Tips
 

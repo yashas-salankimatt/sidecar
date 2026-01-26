@@ -4,6 +4,7 @@ Guide for creating new sidecar releases.
 
 ## Prerequisites
 
+- Go installed with version matching go.mod version
 - Clean working tree (`git status` shows no changes)
 - All tests passing (`go test ./...`)
 - GitHub CLI authenticated (`gh auth status`)
@@ -115,6 +116,10 @@ gh release view vX.Y.Z
 # Test that users can install (critical!)
 GOWORK=off go install github.com/marcus/sidecar/cmd/sidecar@vX.Y.Z
 
+# Verify binary shows correct version
+sidecar --version
+# Should output: sidecar version vX.Y.Z
+
 # Test update notification
 go build -ldflags "-X main.Version=v0.0.1" -o /tmp/sidecar-test ./cmd/sidecar
 /tmp/sidecar-test
@@ -144,9 +149,22 @@ Users see update notifications because:
 1. On startup, sidecar checks `https://api.github.com/repos/marcus/sidecar/releases/latest`
 2. Compares `tag_name` against current version
 3. Shows toast if newer version exists
-4. Results cached for 6 hours
+4. Results cached for 3 hours (configured in `internal/version/cache.go`)
+
+**Note:** Pre-release versions are normalized for comparison. For example, `v0.48.0-rc1` compares as `v0.48.0` (pre-release suffixes like `-rc1`, `-beta` are stripped).
 
 Dev versions (`devel`, `devel+hash`) skip the check.
+
+## Recovery: Fixing a Bad Release
+
+If a release was published with bugs:
+1. Publish a new patch release (v0.48.1) with fixes
+2. For critical bugs, create a new release immediately
+3. Delete unpublished GitHub release without affecting git tags:
+   ```bash
+   gh release delete vX.Y.Z
+   ```
+4. Keep the git tag to preserve history
 
 ## Checklist
 

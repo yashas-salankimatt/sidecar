@@ -42,11 +42,14 @@ sidecar --enable-feature=feature1,feature2
 
 CLI overrides take precedence over config file settings.
 
+Note: Using an unknown feature name in a CLI flag produces a warning but doesn't prevent the application from starting.
+
 ## Available Features
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `tmux_interactive_input` | on | Enable write support for tmux panes |
+| `tmux_interactive_input` | true | Enable write support for tmux panes |
+| `tmux_inline_edit` | true | Enable inline file editing via tmux in the files plugin |
 
 ## For Developers
 
@@ -106,6 +109,9 @@ features.SetEnabled(name string, enabled bool) error
 
 // Set a runtime override (does not persist)
 features.SetOverride(name string, enabled bool)
+
+// Check if a feature name is registered (exists in codebase)
+features.IsKnownFeature(name string) bool
 ```
 
 ### Priority Order
@@ -117,6 +123,11 @@ Feature state is resolved in this order (first match wins):
 
 ## Best Practices
 
+### Naming Conventions
+- Use snake_case for feature names (e.g., `my_new_feature`, not `myNewFeature`)
+- Use descriptive names that indicate what functionality is being gated
+
+### General Guidelines
 - New experimental features should default to `false`
 - Provide clear descriptions for each feature
 - Document features in this guide when adding them

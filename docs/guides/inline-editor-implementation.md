@@ -78,42 +78,16 @@ func (p *Plugin) calculateInlineEditorHeight() int {
 
 **Critical**: These must stay in sync with `renderInlineEditorContent()` layout calculations.
 
-### 3. File Modification Detection
+### 3. Confirmation Behavior
 
-The editor tracks the file's modification time (mtime) before editing starts. When the user clicks away, we compare mtimes to determine if the file was changed:
+The implementation **always shows confirmation when the session is alive**, regardless of file modification status. This design choice was made because vim's modification status cannot be reliably detected externally.
 
-```go
-// State in plugin.go
-inlineEditOrigMtime time.Time // File mtime before editing
+**Key insight**: While mtime tracking was considered, it proved unreliable because:
+1. Vim may not write to disk until `:w` is explicitly called
+2. Auto-save plugins and swap files complicate detection
+3. External changes to the file can't be distinguished from editor changes
 
-// In enterInlineEditMode() - capture original mtime
-var origMtime time.Time
-if info, err := os.Stat(fullPath); err == nil {
-    origMtime = info.ModTime()
-}
-
-// InlineEditStartedMsg carries the mtime
-return InlineEditStartedMsg{
-    SessionName:   sessionName,
-    FilePath:      path,
-    OriginalMtime: origMtime,
-}
-
-// isFileModifiedSinceEdit() checks if mtime changed
-func (p *Plugin) isFileModifiedSinceEdit() bool {
-    if p.inlineEditFile == "" || p.inlineEditOrigMtime.IsZero() {
-        return false // Can't determine, assume not modified
-    }
-    fullPath := filepath.Join(p.ctx.WorkDir, p.inlineEditFile)
-    info, err := os.Stat(fullPath)
-    if err != nil {
-        return false
-    }
-    return info.ModTime().After(p.inlineEditOrigMtime)
-}
-```
-
-**Why mtime**: This avoids reading/hashing file contents. If the user opens a file but makes no changes, clicking away exits immediately without confirmation.
+The simple rule is: **session alive = show confirmation, session dead = exit immediately**.
 
 ### 3b. Session Alive Detection
 
@@ -139,7 +113,7 @@ This is checked:
 
 ### 4. Exit Confirmation Dialog
 
-When users click away from the editor **and the file was modified**, a confirmation dialog prevents accidental data loss:
+When users click away from the editor **and the session is still alive**, a confirmation dialog prevents accidental data loss:
 
 ```go
 // State fields in plugin.go
@@ -162,7 +136,7 @@ if p.inlineEditMode && p.inlineEditor != nil && p.inlineEditor.IsActive() {
     action := p.mouseHandler.HandleMouse(msg)
 
     handleClickAway := func(regionID string, regionData interface{}) (*Plugin, tea.Cmd) {
-        // First check if session is still alive (vim may have exited via :wq)
+        // Check if session is still alive (vim may have exited via :wq)
         if !p.isInlineEditSessionAlive() {
             // Session is dead - just clean up and process click
             p.exitInlineEditMode()
@@ -171,19 +145,12 @@ if p.inlineEditMode && p.inlineEditor != nil && p.inlineEditor.IsActive() {
             return p.processPendingClickAction()
         }
 
-        if p.isFileModifiedSinceEdit() {
-            // File was modified and session is alive - show confirmation
-            p.pendingClickRegion = regionID
-            p.pendingClickData = regionData
-            p.showExitConfirmation = true
-            p.exitConfirmSelection = 0
-            return p, nil
-        }
-        // File not modified - exit immediately
+        // Session alive - always show confirmation
         p.pendingClickRegion = regionID
         p.pendingClickData = regionData
-        p.exitInlineEditMode()
-        return p.processPendingClickAction()
+        p.showExitConfirmation = true
+        p.exitConfirmSelection = 0
+        return p, nil
     }
 
     if action.Type == mouse.ActionClick {
@@ -223,6 +190,44 @@ if p.inlineEditMode && p.inlineEditor != nil && p.inlineEditor.IsActive() {
 }
 ```
 
+### 7. Mouse Support (SGR Protocol)
+
+The inline editor supports full mouse interaction including text selection via the SGR (1006) mouse protocol. This enables:
+- Click to position cursor
+- Click and drag to select text
+- Scroll wheel support
+
+**Implementation**: Mouse events are forwarded to the tty model which translates them into SGR escape sequences for the editor:
+
+```go
+// Press, drag, and release events are all forwarded
+case tea.MouseMsg:
+    if p.inlineEditMode && p.inlineEditor != nil && p.inlineEditor.IsActive() {
+        // Forward mouse events to editor (press, drag, release)
+        return p, p.inlineEditor.Update(msg)
+    }
+```
+
+The tty model handles SGR encoding: `\x1b[<button;x;y;M/m` where `M` = press/drag, `m` = release.
+
+### 8. Multi-Editor Support
+
+The `sendEditorSaveAndQuit()` function supports multiple terminal editors, detecting which editor is running and sending the appropriate save-and-quit sequence:
+
+| Editor | Save & Quit Command |
+|--------|---------------------|
+| vim, nvim, vi | `Escape :wq Enter` |
+| nano | `Ctrl+O Enter Ctrl+X` |
+| emacs | `Ctrl+X Ctrl+S Ctrl+X Ctrl+C` |
+| helix | `Escape :wq Enter` |
+| micro | `Ctrl+S Ctrl+Q` |
+| kakoune | `Escape :write-quit Enter` |
+| joe | `Ctrl+K X` |
+| ne | `Escape :SaveQuit Enter` |
+| amp | `Ctrl+S Ctrl+Q` |
+
+Editor detection is done by checking the running process in the tmux session.
+
 ## Exit Paths
 
 | Method | Confirmation | Description |
@@ -230,7 +235,7 @@ if p.inlineEditMode && p.inlineEditor != nil && p.inlineEditor.IsActive() {
 | `Ctrl+\` | No | Immediate exit (tty.Config.ExitKey) |
 | Double-ESC | No | Exit with 150ms delay (vim ESC compatibility) |
 | `:q`, `:wq` in vim | No | Normal editor exit, session death detected |
-| Click tree/tab | If modified | Shows confirmation only if file was modified; exits immediately otherwise |
+| Click tree/tab | Yes (if session alive) | Always shows confirmation when session is alive; exits immediately if session already dead |
 
 ## State Management
 
@@ -242,7 +247,6 @@ inlineEditor         *tty.Model // Embeddable tty model
 inlineEditMode       bool       // Currently editing
 inlineEditSession    string     // Tmux session name
 inlineEditFile       string     // File being edited
-inlineEditOrigMtime  time.Time  // Original file mtime (for modification detection)
 
 // Exit confirmation state
 showExitConfirmation bool
@@ -336,6 +340,24 @@ func (p *Plugin) renderInlineEditorContent() string {
 }
 ```
 
+### Don't Forget to Handle Tab Row Clicks Separately
+
+Tab row clicks need position-based detection BEFORE region-based detection. The tab row is at a specific Y position and must be checked first:
+
+```go
+// Check tab row clicks by Y position first
+if len(p.tabs) > 1 && action.Y == tabRowY {
+    // Handle as tab click using X position to determine which tab
+}
+
+// Then fall back to registered regions for other clicks
+if action.Region != nil {
+    // Handle region-based clicks
+}
+```
+
+Without this ordering, tab clicks may be incorrectly handled as preview pane clicks.
+
 ## Keyboard Shortcuts
 
 | Key | Command | Description |
@@ -394,13 +416,12 @@ Enable in `~/.config/sidecar/config.json`:
    - [ ] Double-ESC exits immediately
    - [ ] `:wq` in vim saves and exits
    - [ ] `:q!` in vim exits without saving
-   - [ ] Click on file tree (with unsaved changes) shows confirmation dialog
-   - [ ] Click on file tree (no changes made) exits immediately without confirmation
+   - [ ] Click on file tree (session alive) shows confirmation dialog
+   - [ ] Click on file tree (session dead) exits immediately without confirmation
 
-3. **Modification detection**:
-   - [ ] Open file with `e`, make no changes, click away → exits immediately
-   - [ ] Open file with `e`, make changes, click away → shows confirmation
-   - [ ] Open file with `e`, make changes, save with `:w`, click away → exits immediately (mtime updated)
+3. **Confirmation behavior**:
+   - [ ] Open file with `e`, click away while session is alive → always shows confirmation
+   - [ ] Open file with `e`, exit with `:wq`, click away → exits immediately (session dead)
 
 4. **Confirmation dialog**:
    - [ ] j/k navigates options
@@ -411,7 +432,7 @@ Enable in `~/.config/sidecar/config.json`:
 
 5. **Edge cases**:
    - [ ] Window resize updates editor dimensions
-   - [ ] Multiple tabs: clicking different tab triggers confirmation (if modified)
+   - [ ] Multiple tabs: clicking different tab triggers confirmation (if session alive)
    - [ ] Binary files don't allow inline edit (falls back to external)
 
 ## References

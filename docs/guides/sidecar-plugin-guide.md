@@ -45,10 +45,75 @@ Sidecar supports switching between git worktrees. When this happens, all plugins
 - Add default **bindings** in `internal/keymap/bindings.go` so your commands have keys. Bindings are looked up by context.
 - Keep command IDs stable; they are referenced by bindings and help text. Prefer verbs (`open-file`, `toggle-diff-mode`) over nouns.
 
+### Command organization
+
+Assign a **Category** from `plugin.CategoryXXX` to help users find commands in the palette:
+- `CategoryNavigation`, `CategoryActions`, `CategoryView`, `CategorySearch`, `CategoryEdit`, `CategoryGit`, `CategorySystem`
+
+Use **Priority** (1-99) to control footer hint display order: lower = higher priority. Priority `0` is treated as `99` (lowest).
+
+```go
+plugin.Command{
+    ID:       "stage-file",
+    Name:     "Stage",
+    Category: plugin.CategoryGit,
+    Priority: 10, // High priority, shown early in footer
+    Context:  "git-status",
+}
+```
+
+### Dynamic binding registration
+
+Plugins can register bindings dynamically at runtime via the context's `Keymap`:
+
+```go
+func (p *Plugin) Init(ctx *plugin.Context) error {
+    if ctx.Keymap != nil {
+        ctx.Keymap.RegisterPluginBinding("g g", "go-to-top", "my-context")
+    }
+    return nil
+}
+```
+
 ## Event bus (cross-plugin signals)
 - Subscribe: `ch := ctx.EventBus.Subscribe("topic")` inside `Start()` and watch in a command/goroutine that forwards typed messages into `Update`.
 - Publish: `ctx.EventBus.Publish("topic", event.NewEvent(event.TypeRefreshNeeded, "topic", payload))`.
 - Delivery is best-effort, buffered (size 16), and drops when full; design listeners to be resilient.
+
+## Plugin focus events
+
+- **PluginFocusedMsg** (from `internal/app`): Sent when your plugin becomes the active tab. Use it to refresh data only needed when visible.
+
+When your plugin receives `PluginFocusedMsg`, it can resume watchers, refresh stale data, or catch up on pending updates deferred while unfocused:
+
+```go
+case app.PluginFocusedMsg:
+    // Refresh data when navigating to this plugin
+    if p.pendingRefresh {
+        p.pendingRefresh = false
+        return p, p.refresh()
+    }
+    return p, nil
+```
+
+## External editor integration
+
+- **OpenFileMsg** (from `internal/plugin`): Request opening a file in an external editor.
+
+Plugins send `OpenFileMsg` to launch the user's configured editor. The app handles process execution and terminal restoration:
+
+```go
+func (p *Plugin) openFile(path string, lineNo int) tea.Cmd {
+    editor := p.ctx.Config.EditorCommand // e.g., "vim", "code"
+    return func() tea.Msg {
+        return plugin.OpenFileMsg{
+            Editor: editor,
+            Path:   path,
+            LineNo: lineNo, // 0 = start of file
+        }
+    }
+}
+```
 
 ## Adapters
 - `ctx.Adapters` holds integrations (e.g., `claude-code`). Check capability/Detect in `Init` before using.
@@ -66,6 +131,17 @@ Sidecar supports switching between git worktrees. When this happens, all plugins
 - Prefer small helper render functions per view mode to keep code readable.
 - Treat tabs as layout-affecting: expand `\t` to spaces (8-col stops) before any width checks or truncation, or "blank" lines can wrap.
 - Use ANSI-aware width/truncation helpers (`ansi.Truncate`, `lipgloss.Width`) when content can contain escape codes.
+
+### Constraining output height
+
+**Critical**: Always constrain plugin output height. The app's header/footer are always visible—plugins must not exceed their allocated height or the header will scroll off-screen.
+
+To enforce height in `View(width, height int)`:
+```go
+lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(content)
+```
+
+Note: `lipgloss.Height(str)` is a measurement function that returns an `int`, not a style method. Do not use `lipgloss.Height(height).Render(content)`—that is incorrect.
 
 ## Persisting user preferences
 - Use `internal/state` to persist layout preferences (pane widths, view modes) across restarts.

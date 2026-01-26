@@ -4,6 +4,8 @@ A practical guide for working on the Sidecar documentation site (`website/`). Th
 
 ## Quick Start
 
+Requires Node.js >= 20.0
+
 ```bash
 cd website
 npm install    # First time only
@@ -11,6 +13,8 @@ npm start      # Dev server at http://localhost:3000
 ```
 
 The dev server hot-reloads on file changes.
+
+> **Note**: This guide uses `npm` commands. The `website/README.md` still references `yarn` (legacy) but both work.
 
 ## Project Structure
 
@@ -206,6 +210,14 @@ themeConfig: {
 }
 ```
 
+### Custom Navbar Items
+
+The navbar includes a custom theme switcher component. Custom navbar items are defined in `src/theme/NavbarItem/index.js` wrapping components from `src/components/`.
+
+### Theme Configuration
+
+Dark mode is configured with `disableSwitch: true` in the theme config, meaning users cannot toggle between light and dark modes.
+
 ### Footer
 ```javascript
 footer: {
@@ -216,6 +228,10 @@ footer: {
   copyright: `Copyright © ${new Date().getFullYear()} Sidecar.`,
 }
 ```
+
+### Future Compatibility
+
+The config includes `future: { v4: true }` for Docusaurus v4 compatibility, enabling upcoming features and ensuring a smoother upgrade path.
 
 **Docusaurus Reference**: [Configuration](https://docusaurus.io/docs/configuration)
 
@@ -396,7 +412,7 @@ import TabItem from '@theme/TabItem';
 
 ## Troubleshooting
 
-**Build fails with broken links**: Check `onBrokenLinks` in config. Use `'warn'` during development.
+**Build fails with broken links**: The config uses `onBrokenLinks: 'throw'` to fail builds on broken links. This catches issues early. For local development you can temporarily change to `'warn'` if needed.
 
 **Styles not updating**: Clear cache: `npm run clear && npm start`
 

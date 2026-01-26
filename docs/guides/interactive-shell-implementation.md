@@ -198,7 +198,7 @@ p.Agent.OutputBuf.Clear() // in enterInteractiveMode() and exitInteractiveMode()
 
 ### 5. Cursor Capture
 
-**Atomic Capture** (`agent.go:815-839`):
+**Atomic Capture** (`interactive.go:1107`):
 
 Cursor position must be captured atomically with output to avoid race conditions:
 
@@ -212,14 +212,15 @@ func queryCursorPositionSync(target string) (row, col, paneHeight, paneWidth int
 
 This runs synchronously in the poll goroutine, NOT from `View()` which would block rendering.
 
-**Cursor State Caching** (`interactive.go:766-773`):
+**Cursor State Caching** (`interactive.go:1057`):
 
 ```go
-func (p *Plugin) getCursorPosition() (row, col, paneHeight int, visible bool, err error) {
+func (p *Plugin) getCursorPosition() (row, col, paneHeight, paneWidth int, visible bool, err error) {
     // Return cached values - never spawn subprocess from View()
     return p.interactiveState.CursorRow,
            p.interactiveState.CursorCol,
            p.interactiveState.PaneHeight,
+           p.interactiveState.PaneWidth,
            p.interactiveState.CursorVisible,
            nil
 }
@@ -229,7 +230,7 @@ func (p *Plugin) getCursorPosition() (row, col, paneHeight int, visible bool, er
 
 ### 6. Key Mapping
 
-**Basic Implementation** (`interactive.go`):
+**Basic Implementation** (`internal/tty/keymap.go`, exposed as `tty.MapKeyToTmux()`):
 
 ```go
 func MapKeyToTmux(msg tea.KeyMsg) (key string, useLiteral bool) {
@@ -260,6 +261,21 @@ Interactive mode supports clipboard copy/paste without leaving Sidecar:
 - Paste: press the paste key (`alt+v` by default, configurable via `plugins.workspace.interactivePasteKey`). Sidecar reads the system clipboard and sends it to tmux, using bracketed paste sequences when the app enabled bracketed paste mode.
 
 **Terminal shortcut note**: On macOS terminals, Cmd+C/Cmd+V are handled by the terminal and typically do not reach Sidecar in interactive mode. Use the Option-based bindings (or remap in your terminal). In iTerm, choosing "Disable mouse reporting" to enable mouse selection also disables all mouse events (click/scroll/drag) for Sidecar.
+
+**Configuration** (`~/.config/sidecar/config.json`):
+
+```json
+{
+  "plugins": {
+    "workspace": {
+      "interactiveCopyKey": "alt+c",
+      "interactivePasteKey": "alt+v"
+    }
+  }
+}
+```
+
+Note: Configuration keys use camelCase in JSON.
 
 ## Common Pitfalls
 
@@ -359,11 +375,12 @@ Enable in `~/.config/sidecar/config.json`:
 | File | Purpose |
 |------|---------|
 | `internal/plugins/workspace/interactive.go` | Main interactive mode logic, polling, key handling |
-| `internal/plugins/workspace/keymap_tmux.go` | Bubble Tea → tmux key translation |
+| `internal/tty/keymap.go` | Bubble Tea → tmux key translation (`tty.MapKeyToTmux()`) |
+| `internal/tty/output_buffer.go` | OutputBuffer with hash-based change detection (moved from workspace) |
 | `internal/plugins/workspace/view_preview.go` | Cursor overlay rendering |
 | `internal/plugins/workspace/agent.go` | Tmux capture and polling coordination |
 | `internal/plugins/workspace/shell.go` | Shell-specific polling (similar to agent.go) |
-| `internal/plugins/workspace/types.go` | OutputBuffer with hash-based change detection |
+| `internal/plugins/workspace/types.go` | InteractiveState and other workspace types |
 | `internal/plugins/workspace/update.go` | Message handlers for output and polling |
 
 ## Testing Interactive Mode

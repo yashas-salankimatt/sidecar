@@ -24,17 +24,31 @@ Best practices:
 
 Typical layout flow:
 
-- `paneHeight := height - 2` (panel border)
-- `visibleHeight := paneHeight - 2` (panel header lines)
-- Sidebar renders:
-  - header (already accounted for in `visibleHeight`)
-  - files section (variable, may be truncated)
-  - separator
-  - optional status line
-  - commits header
-  - commit list
+- `paneHeight := height - 2` (borders)
+- `innerHeight := paneHeight - 2` (panel border + header lines)
+- Files section reserves ~3 lines minimum, rest for commits
 
-A safe pattern is to centralize capacity calculation in a helper (used by both render and scroll logic) and have it consume `visibleHeight` directly.
+Example with concrete numbers (terminal height 40):
+```
+height = 40
+paneHeight = 40 - 2 = 38        // outer borders
+innerHeight = 38 - 2 = 36       // panel border + header
+filesSection = 3                 // minimum for "Working tree clean" or staged files
+separator = 1
+commitsHeader = 1
+commitCapacity = 36 - 3 - 1 - 1 = 31
+```
+
+A safe pattern is to centralize capacity calculation in a helper (used by both render and scroll logic) and have it consume `innerHeight` directly.
+
+### Capacity Helper Example
+
+The helper should mirror render logic exactly. Test with:
+- Clean tree (only "Working tree clean" line)
+- Full tree with sections
+- Different height budgets (small terminal)
+
+See `gitstatus.commitSectionCapacity()` for reference implementation.
 
 ## Scroll + Cursor Stability
 
@@ -43,6 +57,16 @@ A safe pattern is to centralize capacity calculation in a helper (used by both r
 - Never mutate scroll offsets in `render` functions. Rendering must be pure.
 - Use absolute indices for list hit regions to avoid drift when filters or pagination are active.
 - Keep `selected` logic based on the same absolute index space used by cursor state.
+
+Explicit scroll clamping pattern:
+```go
+if p.commitScrollOff > len(commits) - visibleCommits {
+    p.commitScrollOff = len(commits) - visibleCommits
+}
+if p.commitScrollOff < 0 {
+    p.commitScrollOff = 0
+}
+```
 
 Paging keys should work across all lists:
 
@@ -58,7 +82,7 @@ Refreshes and background loads often cause disappearing rows or cursor jumps. Av
 - When refreshing a list, merge by hash/ID to preserve older entries.
 - Preserve selection by stable ID (hash), not index.
 - If a refresh only affects metadata (like push status), update in place instead of replacing the list.
-- After any merge/replace, clamp scroll offsets and cursor ranges.
+- After any merge/replace, clamp scroll offsets and cursor ranges immediately. Example: after `loadMoreCommits()`, call `clampCommitScroll()`.
 - If the viewport is taller than the initial page size, auto-load additional pages until the list fills or history is exhausted.
 
 ## Empty Rows at the Bottom
@@ -80,6 +104,14 @@ Avoid this by:
 - Use absolute indices (not visible indices) so clicks map to the correct item even when scrolled.
 - Ensure regions include the same width as the rendered list lines.
 
+Hit region priority example (register in order of increasing priority, last wins):
+```go
+// Register in order of increasing priority (last wins)
+p.HitMap.AddRect(regionSidebar, x, y, w, h, data)        // lowest
+p.HitMap.AddRect(regionCommitLine, x, y, w, h, data)     // medium
+p.HitMap.AddRect(regionCommitDivider, x, y, w, h, data)  // highest
+```
+
 ## Footer Hints
 
 - Do not render any footer or hint lines inside plugins.
@@ -90,6 +122,11 @@ Avoid this by:
 - Always constrain output height in `View(width, height int)` using `lipgloss.Height(height)` or a wrapper style.
 - Never rely on the app to truncate overflow.
 - Avoid mutating plugin state during rendering.
+
+MaxHeight pattern for strict height enforcement:
+```go
+lipgloss.NewStyle().Width(w).Height(h).MaxHeight(h).Render(content)
+```
 
 ## Testing Guidance
 

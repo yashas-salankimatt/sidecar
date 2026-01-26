@@ -158,6 +158,9 @@ modal.Buttons(
 
 // Danger button (red styling)
 modal.Btn(" Delete ", "delete", modal.BtnDanger())
+
+// Explicitly mark as primary (default for focused state)
+modal.Btn(" Submit ", "submit", modal.BtnPrimary())
 ```
 
 - Button IDs are returned as actions when clicked or Enter is pressed
@@ -222,9 +225,10 @@ Scrollable item list with selection:
 
 ```go
 items := []modal.ListItem{
-    {ID: "item-1", Label: "First item"},
+    {ID: "item-1", Label: "First item", Data: someValue},
     {ID: "item-2", Label: "Second item"},
     {ID: "item-3", Label: "Third item"},
+    // Data field is optional and can hold any associated value
 }
 var selectedIdx int
 
@@ -234,6 +238,7 @@ modal.List("my-list", items, &selectedIdx,
 ```
 
 - j/k or up/down moves selection
+- home/end jumps to first/last item
 - Enter returns selected item's ID as action
 - Shows scroll indicators when content overflows
 
@@ -269,11 +274,13 @@ modal.Custom(
         }
     },
     func(msg tea.Msg, focusID string) (string, tea.Cmd) {
-        // Handle input when focused (optional)
+        // Handle input when focused (optional, can be nil)
         return "", nil
     },
 )
 ```
+
+The `updateFn` parameter can be `nil` if no custom input handling is needed.
 
 ## Handling Input
 
@@ -329,6 +336,12 @@ m.HoveredID() string  // Currently hovered element ID
 m.SetFocus(id string) // Focus specific element by ID
 m.Reset()             // Reset focus, hover, scroll to initial state
 ```
+
+## State Management
+
+- **Focus state persists across renders** - Once an element is focused, it remains focused until explicitly changed or the modal is reset
+- **Call `Reset()` when closing and reopening modals** - This ensures the modal starts with the correct initial focus state rather than stale focus from a previous interaction
+- **Width caching should include state-dependent changes** - If your modal content changes based on state (not just width), include those state values in your cache check
 
 ## Rendering
 
@@ -443,3 +456,4 @@ func (p *Plugin) renderDeleteView(width, height int) string {
 | Hover not updating | Pass `mouseHandler` to both `Render` and `HandleMouse` |
 | Input not receiving keys | Ensure input section is focused (check `FocusedID()`) |
 | Modal rebuilds every frame | Cache by width: `if p.myModal != nil && p.cachedWidth == modalW` |
+| Modal shows with wrong focus | Call `m.Reset()` when showing modal |

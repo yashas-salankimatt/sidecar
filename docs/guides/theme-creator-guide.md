@@ -4,21 +4,30 @@ This guide explains how to create custom themes for Sidecar.
 
 ## Quick Start
 
-Themes are configured in your `~/.config/sidecar/config.yaml`:
+Themes are configured in your `~/.config/sidecar/config.json`:
 
-```yaml
-ui:
-  theme:
-    name: "default"  # Base theme: "default" or "dracula"
-    overrides:       # Optional color overrides
-      primary: "#FF5500"
-      success: "#00FF00"
+```json
+{
+  "ui": {
+    "theme": {
+      "name": "default",
+      "overrides": {
+        "primary": "#FF5500",
+        "success": "#00FF00"
+      }
+    }
+  }
+}
 ```
 
 ## Available Base Themes
 
 - **default** - Dark theme with purple/blue accents
 - **dracula** - Dracula-inspired dark theme with vibrant colors
+- **molokai** - Vibrant, high-contrast dark theme
+- **nord** - Arctic, north-bluish color palette
+- **solarized-dark** - Precision color scheme for reduced blue light
+- **tokyo-night** - Clean dark theme celebrating Downtown Tokyo
 
 ## Color Palette Reference
 
@@ -47,6 +56,8 @@ All colors use hex format (`#RRGGBB`). Here's the complete palette:
 | `textMuted` | Muted text (hints, line numbers) | `#6B7280` | `#6272A4` |
 | `textSubtle` | Very subtle text (ignored files) | `#4B5563` | `#44475A` |
 | `textHighlight` | Highlighted text (subtitles) | `#E5E7EB` | `#F8F8F2` |
+| `textSelection` | Text on selected backgrounds | `#FFFFFF` | `#F8F8F2` |
+| `textInverse` | Inverse text color | `#111827` | `#282A36` |
 
 ### Background Colors
 | Key | Description | Default | Dracula |
@@ -111,33 +122,41 @@ Tabs in the header bar support multiple color schemes. Configure with `tabStyle`
 
 **Examples:**
 
-```yaml
-# Use a preset
-ui:
-  theme:
-    overrides:
-      tabStyle: "sunset"
+```json
+// Use a preset
+{
+  "ui": {
+    "theme": {
+      "overrides": {
+        "tabStyle": "sunset"
+      }
+    }
+  }
+}
 
-# Custom gradient
-ui:
-  theme:
-    overrides:
-      tabStyle: "gradient"
-      tabColors:
-        - "#FF6B35"
-        - "#F7C59F"
-        - "#FF006E"
+// Custom gradient
+{
+  "ui": {
+    "theme": {
+      "overrides": {
+        "tabStyle": "gradient",
+        "tabColors": ["#FF6B35", "#F7C59F", "#FF006E"]
+      }
+    }
+  }
+}
 
-# Per-tab distinct colors
-ui:
-  theme:
-    overrides:
-      tabStyle: "per-tab"
-      tabColors:
-        - "#FF5555"
-        - "#50FA7B"
-        - "#8BE9FD"
-        - "#F1FA8C"
+// Per-tab distinct colors
+{
+  "ui": {
+    "theme": {
+      "overrides": {
+        "tabStyle": "per-tab",
+        "tabColors": ["#FF5555", "#50FA7B", "#8BE9FD", "#F1FA8C"]
+      }
+    }
+  }
+}
 ```
 
 ### Diff Colors
@@ -157,6 +176,23 @@ ui:
 | `toastSuccessText` | Toast success foreground | `#000000` | `#282A36` |
 | `toastErrorText` | Toast error foreground | `#FFFFFF` | `#F8F8F2` |
 
+### Danger Button Colors
+| Key | Description | Default | Dracula |
+|-----|-------------|---------|---------|
+| `dangerLight` | Danger light variant | `#FCA5A5` | `#FF6E6E` |
+| `dangerDark` | Danger dark variant | `#7F1D1D` | `#8B0000` |
+| `dangerBright` | Danger bright variant | `#FF0000` | `#FF5555` |
+| `dangerHover` | Danger hover state | `#DC2626` | `#FF4444` |
+
+### Blame Age Colors
+| Key | Description | Default | Dracula |
+|-----|-------------|---------|---------|
+| `blameAge1` | Most recent commits | `#10B981` | `#50FA7B` |
+| `blameAge2` | Recent commits | `#3B82F6` | `#8BE9FD` |
+| `blameAge3` | Moderate age commits | `#8B5CF6` | `#BD93F9` |
+| `blameAge4` | Older commits | `#F59E0B` | `#FFB86C` |
+| `blameAge5` | Oldest commits | `#6B7280` | `#6272A4` |
+
 ### Third-Party Theme Names
 | Key | Description | Default | Dracula |
 |-----|-------------|---------|---------|
@@ -169,100 +205,115 @@ ui:
 
 Start from a base theme and override specific colors:
 
-```yaml
-ui:
-  theme:
-    name: "default"
-    overrides:
-      primary: "#E91E63"      # Pink primary
-      success: "#4CAF50"      # Material green
-      error: "#F44336"        # Material red
-      syntaxTheme: "github"   # Different syntax theme
+```json
+{
+  "ui": {
+    "theme": {
+      "name": "default",
+      "overrides": {
+        "primary": "#E91E63",
+        "success": "#4CAF50",
+        "error": "#F44336",
+        "syntaxTheme": "github"
+      }
+    }
+  }
+}
 ```
 
 ### Method 2: Full Theme Override
 
 Override all colors for complete control:
 
-```yaml
-ui:
-  theme:
-    name: "default"
-    overrides:
-      # Brand
-      primary: "#6200EA"
-      secondary: "#03DAC6"
-      accent: "#FF9800"
+```json
+{
+  "ui": {
+    "theme": {
+      "name": "default",
+      "overrides": {
+        "primary": "#6200EA",
+        "secondary": "#03DAC6",
+        "accent": "#FF9800",
 
-      # Status
-      success: "#4CAF50"
-      warning: "#FF9800"
-      error: "#F44336"
-      info: "#2196F3"
+        "success": "#4CAF50",
+        "warning": "#FF9800",
+        "error": "#F44336",
+        "info": "#2196F3",
 
-      # Text
-      textPrimary: "#FFFFFF"
-      textSecondary: "#B0BEC5"
-      textMuted: "#78909C"
-      textSubtle: "#546E7A"
-      textHighlight: "#ECEFF1"
+        "textPrimary": "#FFFFFF",
+        "textSecondary": "#B0BEC5",
+        "textMuted": "#78909C",
+        "textSubtle": "#546E7A",
+        "textHighlight": "#ECEFF1",
+        "textSelection": "#FFFFFF",
+        "textInverse": "#121212",
 
-      # Backgrounds
-      bgPrimary: "#121212"
-      bgSecondary: "#1E1E1E"
-      bgTertiary: "#2D2D2D"
-      bgOverlay: "#00000080"
+        "bgPrimary": "#121212",
+        "bgSecondary": "#1E1E1E",
+        "bgTertiary": "#2D2D2D",
+        "bgOverlay": "#00000080",
 
-      # Borders
-      borderNormal: "#424242"
-      borderActive: "#6200EA"
-      borderMuted: "#1E1E1E"
+        "borderNormal": "#424242",
+        "borderActive": "#6200EA",
+        "borderMuted": "#1E1E1E",
 
-      # Gradient borders (30° diagonal gradient on panels)
-      gradientBorderActive:
-        - "#6200EA"
-        - "#03DAC6"
-      gradientBorderNormal:
-        - "#424242"
-        - "#303030"
-      gradientBorderAngle: 30
+        "gradientBorderActive": ["#6200EA", "#03DAC6"],
+        "gradientBorderNormal": ["#424242", "#303030"],
+        "gradientBorderAngle": 30,
 
-      # Diff
-      diffAddFg: "#4CAF50"
-      diffAddBg: "#1B3D1B"
-      diffRemoveFg: "#F44336"
-      diffRemoveBg: "#3D1B1B"
+        "diffAddFg": "#4CAF50",
+        "diffAddBg": "#1B3D1B",
+        "diffRemoveFg": "#F44336",
+        "diffRemoveBg": "#3D1B1B",
 
-      # UI elements
-      buttonHover: "#7C4DFF"
-      tabTextInactive: "#121212"
-      link: "#82B1FF"
-      toastSuccessText: "#000000"
-      toastErrorText: "#FFFFFF"
+        "buttonHover": "#7C4DFF",
+        "tabTextInactive": "#121212",
+        "link": "#82B1FF",
+        "toastSuccessText": "#000000",
+        "toastErrorText": "#FFFFFF",
 
-      # Third-party
-      syntaxTheme: "monokai"
-      markdownTheme: "dark"
+        "dangerLight": "#FCA5A5",
+        "dangerDark": "#7F1D1D",
+        "dangerBright": "#FF0000",
+        "dangerHover": "#DC2626",
+
+        "blameAge1": "#4CAF50",
+        "blameAge2": "#2196F3",
+        "blameAge3": "#9C27B0",
+        "blameAge4": "#FF9800",
+        "blameAge5": "#78909C",
+
+        "syntaxTheme": "monokai",
+        "markdownTheme": "dark"
+      }
+    }
+  }
+}
 ```
 
 ### Method 3: Custom Gradient Borders
 
 Create eye-catching multi-color gradients:
 
-```yaml
-ui:
-  theme:
-    name: "default"
-    overrides:
-      # Rainbow gradient on active panels
-      gradientBorderActive:
-        - "#FF0000"  # Red
-        - "#FF7F00"  # Orange
-        - "#FFFF00"  # Yellow
-        - "#00FF00"  # Green
-        - "#0000FF"  # Blue
-        - "#8B00FF"  # Violet
-      gradientBorderAngle: 45  # Steeper diagonal
+```json
+{
+  "ui": {
+    "theme": {
+      "name": "default",
+      "overrides": {
+        "gradientBorderActive": [
+          "#FF0000",
+          "#FF7F00",
+          "#FFFF00",
+          "#00FF00",
+          "#0000FF",
+          "#8B00FF"
+        ],
+        "gradientBorderAngle": 45
+      }
+    }
+  }
+}
 ```
 
 ## Available Syntax Themes
@@ -329,7 +380,10 @@ styles.ApplyTheme("my-theme")
 
 ```go
 // Get list of available theme names
-themes := styles.ListThemes() // ["default", "dracula", ...]
+themes := styles.ListThemes() // ["default", "dracula", "molokai", "nord", ...]
+
+// Get a theme by name
+theme := styles.GetTheme("dracula") // Returns Theme struct
 
 // Check if theme exists
 exists := styles.IsValidTheme("my-theme") // true/false

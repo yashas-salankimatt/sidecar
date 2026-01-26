@@ -5,7 +5,11 @@ This guide covers how to add drag-to-resize support for two-pane plugin layouts.
 ## Prerequisites
 
 - Plugin already has a two-pane layout (sidebar + main content)
-- State persistence functions exist (e.g., `state.GetPluginSidebarWidth()` / `state.SetPluginSidebarWidth()`)
+- State persistence functions exist in `internal/state/state.go`. Each plugin has its own getter/setter:
+  - FileBrowser: `GetFileBrowserTreeWidth()` / `SetFileBrowserTreeWidth(width)`
+  - GitStatus: `GetGitStatusSidebarWidth()` / `SetGitStatusSidebarWidth(width)`
+  - Conversations: `GetConversationsSideWidth()` / `SetConversationsSideWidth(width)`
+  - Workspace: `GetWorkspaceSidebarWidth()` / `SetWorkspaceSidebarWidth(width)`
 - Familiarity with `internal/mouse` package (see `docs/guides/ui-feature-guide.md`)
 
 ## Implementation Checklist
@@ -39,15 +43,27 @@ const (
 )
 ```
 
-### 3. Load Persisted Width in Init
+### 3. Initialize Width on First Render (Not in Init)
+
+**Important:** Do NOT load width in `Init()`. The plugin dimensions (`p.width`) aren't available yet. Instead, initialize width lazily on the first render:
 
 ```go
-func (p *Plugin) Init(ctx *plugin.Context) error {
-    // Load persisted sidebar width
-    if savedWidth := state.GetPluginSidebarWidth(); savedWidth > 0 {
-        p.sidebarWidth = savedWidth
+func (p *Plugin) renderTwoPane() string {
+    // CRITICAL: Clear hit regions at start of each render
+    p.mouseHandler.HitMap.Clear()
+
+    // Initialize sidebar width on first render (not in Init - dimensions unknown there)
+    if p.sidebarWidth == 0 {
+        // Try to load persisted width first
+        // Use your plugin-specific getter (see Prerequisites section)
+        p.sidebarWidth = state.GetYourPluginSidebarWidth()
+        if p.sidebarWidth == 0 {
+            // No persisted value - calculate default (e.g., 30% of available)
+            available := p.width - dividerWidth
+            p.sidebarWidth = available * 30 / 100
+        }
     }
-    // ... rest of init
+    // ... rest of render
 }
 ```
 
@@ -116,6 +132,12 @@ func (p *Plugin) handleMouseDrag(action mouse.MouseAction) (*Plugin, tea.Cmd) {
     newWidth := startValue + action.DragDX
 
     // Clamp to bounds
+    // NOTE: The offset (e.g., -5, -6) varies by plugin depending on border styling:
+    // - GitStatus uses -5 (see internal/plugins/gitstatus/mouse.go)
+    // - FileBrowser uses -6 (see internal/plugins/filebrowser/mouse.go)
+    // - Conversations uses -5 (see internal/plugins/conversations/mouse.go)
+    // - Workspace uses no offset, just dividerWidth (see internal/plugins/workspace/view_list.go)
+    // Adjust based on your plugin's RenderPanel border configuration.
     available := p.width - 5 - dividerWidth
     minWidth := 25
     maxWidth := available - 40
@@ -130,7 +152,8 @@ func (p *Plugin) handleMouseDrag(action mouse.MouseAction) (*Plugin, tea.Cmd) {
 }
 
 func (p *Plugin) handleMouseDragEnd() (*Plugin, tea.Cmd) {
-    _ = state.SetPluginSidebarWidth(p.sidebarWidth)
+    // Use your plugin-specific setter (see Prerequisites section)
+    _ = state.SetYourPluginSidebarWidth(p.sidebarWidth)
     return p, nil
 }
 ```
@@ -300,30 +323,87 @@ Working examples to compare against:
 
 ## State Persistence
 
-Add functions to `internal/state/state.go`:
+Add plugin-specific functions to `internal/state/state.go`. Each plugin needs its own field and getter/setter with a unique name:
 
 ```go
-// In State struct
-PluginSidebarWidth int `json:"pluginSidebarWidth,omitempty"`
+// In State struct - use a unique field name per plugin
+YourPluginSidebarWidth int `json:"yourPluginSidebarWidth,omitempty"`
 
-// Getter
-func GetPluginSidebarWidth() int {
+// Getter - use plugin-specific name
+func GetYourPluginSidebarWidth() int {
     mu.RLock()
     defer mu.RUnlock()
     if current == nil {
         return 0
     }
-    return current.PluginSidebarWidth
+    return current.YourPluginSidebarWidth
 }
 
-// Setter
-func SetPluginSidebarWidth(width int) error {
+// Setter - use plugin-specific name
+func SetYourPluginSidebarWidth(width int) error {
     mu.Lock()
     if current == nil {
         current = &State{}
     }
-    current.PluginSidebarWidth = width
+    current.YourPluginSidebarWidth = width
     mu.Unlock()
     return Save()
 }
 ```
+
+Existing implementations to reference:
+- `GetFileBrowserTreeWidth()` / `SetFileBrowserTreeWidth()`
+- `GetGitStatusSidebarWidth()` / `SetGitStatusSidebarWidth()`
+- `GetConversationsSideWidth()` / `SetConversationsSideWidth()`
+- `GetWorkspaceSidebarWidth()` / `SetWorkspaceSidebarWidth()`
+
+## Performance Optimization: Hit Region Caching
+
+For plugins with complex hit regions (many items, nested structures), avoid rebuilding hit regions on every render. Use a dirty flag pattern:
+
+```go
+type Plugin struct {
+    // ... other fields
+    hitRegionsDirty bool
+    prevWidth       int
+    prevHeight      int
+    prevScrollOff   int
+}
+
+func New() *Plugin {
+    return &Plugin{
+        hitRegionsDirty: true, // Start dirty to build regions on first render
+    }
+}
+
+func (p *Plugin) renderTwoPane() string {
+    // Mark dirty if dimensions or scroll changed
+    if p.width != p.prevWidth || p.height != p.prevHeight {
+        p.hitRegionsDirty = true
+        p.prevWidth = p.width
+        p.prevHeight = p.height
+    }
+    if p.scrollOffset != p.prevScrollOff {
+        p.hitRegionsDirty = true
+        p.prevScrollOff = p.scrollOffset
+    }
+
+    // ... render content ...
+
+    // Only rebuild hit regions when dirty
+    if p.hitRegionsDirty {
+        p.mouseHandler.HitMap.Clear()
+        // Register all hit regions...
+        p.hitRegionsDirty = false
+    }
+
+    return content
+}
+```
+
+Also mark `hitRegionsDirty = true` when:
+- View mode changes (e.g., toggling between list/detail views)
+- Content changes (new items loaded, items expanded/collapsed)
+- Sidebar visibility toggles
+
+See `internal/plugins/conversations/view_layout.go` and `plugin_input.go` for a complete implementation.

@@ -1317,6 +1317,16 @@ func sessionExists(name string) bool {
 // agent type but no running tmux session.
 func (p *Plugin) detectOrphanedWorktrees() {
 	for _, wt := range p.worktrees {
+		// Skip main worktree - can't attach agents to it anyway
+		if wt.IsMain {
+			wt.IsOrphaned = false
+			// Clean up any stale .sidecar-agent file from main worktree
+			if wt.ChosenAgentType != "" && wt.ChosenAgentType != AgentNone {
+				_ = os.Remove(filepath.Join(wt.Path, sidecarAgentFile))
+				wt.ChosenAgentType = ""
+			}
+			continue
+		}
 		// Skip if agent is connected
 		if wt.Agent != nil {
 			wt.IsOrphaned = false
