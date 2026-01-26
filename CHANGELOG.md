@@ -2,6 +2,26 @@
 
 All notable changes to sidecar are documented here.
 
+## [v0.47.0] - 2026-01-25
+
+### Features
+
+- **Inline Editor**: Render editor in preview pane with session detection
+- **Worktree Switcher**: Indicate current worktree and preserve last selection
+
+### Improvements
+
+- Cooler empty workspace screen
+- Skeleton loading animation in conversations plugin
+- Gracefully handle non-vim editors in inline editor
+- Handle deleted worktrees more gracefully
+- Initial abstraction of tty plugin
+
+### Bug Fixes
+
+- Fix inline editor syntax highlighting and theme colors
+- Fix switching from Worktree view to git
+
 ## [v0.46.0] - 2026-01-25
 
 ### Improvements
