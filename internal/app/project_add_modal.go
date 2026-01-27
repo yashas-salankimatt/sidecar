@@ -67,12 +67,20 @@ func (m *Model) projectAddNameSection() modal.Section {
 		sb.WriteString("Name:")
 		sb.WriteString("\n")
 
+		// Sync textinput focus state with modal focus
+		isFocused := focusID == projectAddNameID
+		if isFocused {
+			m.projectAddNameInput.Focus()
+		} else {
+			m.projectAddNameInput.Blur()
+		}
+
 		// Input field style based on focus
 		inputStyle := lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(styles.TextMuted).
 			Padding(0, 1)
-		if focusID == projectAddNameID {
+		if isFocused {
 			inputStyle = inputStyle.BorderForeground(styles.Primary)
 		}
 
@@ -119,12 +127,20 @@ func (m *Model) projectAddPathSection() modal.Section {
 		sb.WriteString("Path:")
 		sb.WriteString("\n")
 
+		// Sync textinput focus state with modal focus
+		isFocused := focusID == projectAddPathID
+		if isFocused {
+			m.projectAddPathInput.Focus()
+		} else {
+			m.projectAddPathInput.Blur()
+		}
+
 		// Input field style based on focus
 		inputStyle := lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(styles.TextMuted).
 			Padding(0, 1)
-		if focusID == projectAddPathID {
+		if isFocused {
 			inputStyle = inputStyle.BorderForeground(styles.Primary)
 		}
 
