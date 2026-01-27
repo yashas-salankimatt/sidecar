@@ -2,6 +2,12 @@
 
 All notable changes to sidecar are documented here.
 
+## [v0.51.0] - 2026-01-27
+
+### Bug Fixes
+
+- Minor fixes to conversation content search
+
 ## [v0.50.0] - 2026-01-26
 
 ### Features
