@@ -191,18 +191,18 @@ func TestContentSearchToggleCollapse(t *testing.T) {
 		},
 	}
 
-	// Cursor is on session, toggle collapse with space
-	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeySpace})
+	// Cursor is on session, toggle collapse with tab (td-2467e8: changed from space)
+	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyTab})
 	p = result.(*Plugin)
 	if !p.contentSearchState.Results[0].Collapsed {
-		t.Error("Session should be collapsed after space on session row")
+		t.Error("Session should be collapsed after tab on session row")
 	}
 
 	// Toggle again to expand
-	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeySpace})
+	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyTab})
 	p = result.(*Plugin)
 	if p.contentSearchState.Results[0].Collapsed {
-		t.Error("Session should be expanded after second space")
+		t.Error("Session should be expanded after second tab")
 	}
 }
 
@@ -408,6 +408,9 @@ func TestTriggerContentSearch(t *testing.T) {
 	result, _ := p.openContentSearch()
 	p = result.(*Plugin)
 
+	// Set a query with at least 2 characters (td-5dcadc: minimum query length)
+	p.contentSearchState.Query = "te"
+
 	initialVersion := p.contentSearchState.DebounceVersion
 
 	// Trigger search
@@ -426,6 +429,38 @@ func TestTriggerContentSearch(t *testing.T) {
 	// Should return a command
 	if cmd == nil {
 		t.Error("triggerContentSearch should return a command")
+	}
+}
+
+func TestTriggerContentSearch_MinQueryLength(t *testing.T) {
+	p := New()
+	p.width = 100
+	p.height = 40
+
+	// Open content search
+	result, _ := p.openContentSearch()
+	p = result.(*Plugin)
+
+	// Query with only 1 character should not trigger search (td-5dcadc)
+	p.contentSearchState.Query = "t"
+	p.contentSearchState.IsSearching = true // Set to true to verify it gets cleared
+
+	cmd := p.triggerContentSearch()
+
+	if cmd != nil {
+		t.Error("triggerContentSearch should return nil for query < 2 chars")
+	}
+	if p.contentSearchState.IsSearching {
+		t.Error("IsSearching should be false when query is too short")
+	}
+
+	// Empty query should also not trigger
+	p.contentSearchState.Query = ""
+	p.contentSearchState.IsSearching = true
+	cmd = p.triggerContentSearch()
+
+	if cmd != nil {
+		t.Error("triggerContentSearch should return nil for empty query")
 	}
 }
 
@@ -452,8 +487,8 @@ func TestContentSearchNextPrevMatch(t *testing.T) {
 	// Start at session row (index 0)
 	p.contentSearchState.Cursor = 0
 
-	// Jump to next match (n key)
-	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	// Jump to next match (ctrl+n - td-2467e8)
+	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyCtrlN})
 	p = result.(*Plugin)
 
 	// Should be at first match (index 2)
@@ -462,7 +497,7 @@ func TestContentSearchNextPrevMatch(t *testing.T) {
 	}
 
 	// Jump to next match again
-	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyCtrlN})
 	p = result.(*Plugin)
 
 	// Should be at second match (index 3)
@@ -470,8 +505,8 @@ func TestContentSearchNextPrevMatch(t *testing.T) {
 		t.Errorf("Cursor should be at second match (3), got %d", p.contentSearchState.Cursor)
 	}
 
-	// Jump to previous match (N key)
-	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	// Jump to previous match (ctrl+p - td-2467e8)
+	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyCtrlP})
 	p = result.(*Plugin)
 
 	// Should be back at first match
@@ -572,16 +607,16 @@ func TestContentSearchGotoTopBottom(t *testing.T) {
 	// Move to middle
 	p.contentSearchState.Cursor = 2
 
-	// Go to top (g key)
-	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	// Go to top (home key - td-2467e8)
+	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyHome})
 	p = result.(*Plugin)
 
 	if p.contentSearchState.Cursor != 0 {
 		t.Errorf("Cursor should be at top (0), got %d", p.contentSearchState.Cursor)
 	}
 
-	// Go to bottom (G key)
-	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	// Go to bottom (end key - td-2467e8)
+	result, _ = p.handleContentSearchKey(tea.KeyMsg{Type: tea.KeyEnd})
 	p = result.(*Plugin)
 
 	flatLen := p.contentSearchState.FlatLen()
@@ -590,25 +625,82 @@ func TestContentSearchGotoTopBottom(t *testing.T) {
 	}
 }
 
-// Ensure scrollToMessageMsg is handled
-func TestScrollToMessageMsg(t *testing.T) {
+// Ensure pending scroll is processed on message load (td-b74d9f)
+func TestPendingScrollOnMessageLoad(t *testing.T) {
 	p := New()
 	p.width = 100
 	p.height = 40
+	p.selectedSession = "test-session"
 
-	// Set up messages
-	p.messages = []adapter.Message{
-		{ID: "msg1", Role: "user", Content: "First message"},
-		{ID: "msg2", Role: "assistant", Content: "Second message"},
-		{ID: "msg3", Role: "user", Content: "Third message"},
-	}
+	// Set up pending scroll state (as if from content search jump)
+	// Uses message ID for pagination-safe navigation
+	p.pendingScrollMsgID = "msg2"
+	p.pendingScrollActive = true
 
-	// Send scroll message
-	result, _ := p.Update(scrollToMessageMsg{MessageIdx: 1})
+	// Simulate MessagesLoadedMsg
+	result, _ := p.Update(MessagesLoadedMsg{
+		SessionID: "test-session",
+		Messages: []adapter.Message{
+			{ID: "msg1", Role: "user", Content: "First message"},
+			{ID: "msg2", Role: "assistant", Content: "Second message"},
+			{ID: "msg3", Role: "user", Content: "Third message"},
+		},
+		TotalCount: 3,
+		Offset:     0,
+	})
 	p = result.(*Plugin)
+
+	// Pending scroll should be cleared
+	if p.pendingScrollActive {
+		t.Error("Pending scroll should be cleared after processing")
+	}
+	if p.pendingScrollMsgID != "" {
+		t.Errorf("Pending scroll message ID should be empty, got %s", p.pendingScrollMsgID)
+	}
 
 	// messageCursor should be updated to find the target
 	// Note: exact behavior depends on visibleMessageIndices
+	if p.messageCursor < 0 {
+		t.Error("Message cursor should be non-negative")
+	}
+}
+
+// TestPendingScrollWithPagination tests that scroll works correctly when messages
+// are paginated (offset > 0). Uses message ID for reliable navigation (td-b74d9f).
+func TestPendingScrollWithPagination(t *testing.T) {
+	p := New()
+	p.width = 100
+	p.height = 40
+	p.selectedSession = "test-session"
+
+	// Simulate paginated scenario: messages 50-52 loaded from a larger set
+	// The target message "msg51" is at index 1 in our loaded slice
+	p.pendingScrollMsgID = "msg51"
+	p.pendingScrollActive = true
+
+	// Simulate MessagesLoadedMsg with pagination
+	result, _ := p.Update(MessagesLoadedMsg{
+		SessionID: "test-session",
+		Messages: []adapter.Message{
+			{ID: "msg50", Role: "user", Content: "Message at offset 50"},
+			{ID: "msg51", Role: "assistant", Content: "Target message at offset 51"},
+			{ID: "msg52", Role: "user", Content: "Message at offset 52"},
+		},
+		TotalCount: 100, // Total messages in session
+		Offset:     50,  // Starting from message 50
+	})
+	p = result.(*Plugin)
+
+	// Pending scroll should be cleared
+	if p.pendingScrollActive {
+		t.Error("Pending scroll should be cleared after processing")
+	}
+	if p.pendingScrollMsgID != "" {
+		t.Error("Pending scroll message ID should be cleared")
+	}
+
+	// Cursor should be positioned correctly in the loaded message array
+	// The target "msg51" is at index 1 in the loaded messages
 	if p.messageCursor < 0 {
 		t.Error("Message cursor should be non-negative")
 	}

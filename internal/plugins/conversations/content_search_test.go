@@ -598,7 +598,7 @@ func TestRenderMatchLine(t *testing.T) {
 		ColEnd:    14, // "test"
 	}
 
-	output := renderMatchLine(match, "test", false, 80, 0, 0, 0)
+	output := renderMatchLine(match, "test", false, false, 80, 0, 0, 0)
 	if output == "" {
 		t.Error("renderMatchLine should produce non-empty output")
 	}
@@ -607,7 +607,7 @@ func TestRenderMatchLine(t *testing.T) {
 	}
 
 	// Selected state
-	output = renderMatchLine(match, "test", true, 80, 0, 0, 0)
+	output = renderMatchLine(match, "test", false, true, 80, 0, 0, 0)
 	if output == "" {
 		t.Error("renderMatchLine selected should produce non-empty output")
 	}
@@ -620,7 +620,7 @@ func TestRenderMatchLine(t *testing.T) {
 		ColStart:  30,
 		ColEnd:    39, // "truncated"
 	}
-	output = renderMatchLine(longMatch, "truncated", false, 60, 0, 0, 0)
+	output = renderMatchLine(longMatch, "truncated", false, false, 60, 0, 0, 0)
 	if output == "" {
 		t.Error("renderMatchLine with long text should produce non-empty output")
 	}
@@ -658,6 +658,60 @@ func TestHighlightMatchRunes(t *testing.T) {
 	output = highlightMatchRunes(utf8Text, 6, 8) // should highlight "世界"
 	if output == "" {
 		t.Error("highlightMatchRunes with UTF-8 should produce non-empty output")
+	}
+}
+
+// TestHighlightAllMatches tests the multi-occurrence highlight function (td-c24c84).
+func TestHighlightAllMatches(t *testing.T) {
+	// Multiple occurrences - verify function runs without error
+	text := "test case: test passed, test failed"
+	output := highlightAllMatches(text, "test", false)
+	if output == "" {
+		t.Error("highlightAllMatches should produce non-empty output")
+	}
+	// Output should contain the original text (with or without styling)
+	if !strings.Contains(output, "case:") {
+		t.Error("highlightAllMatches output should contain parts of original text")
+	}
+
+	// Case insensitive matching
+	output = highlightAllMatches("Test TEST test TeSt", "test", false)
+	if output == "" {
+		t.Error("highlightAllMatches case-insensitive should produce output")
+	}
+
+	// Case sensitive matching - should only highlight "test" not "Test", "TEST", etc.
+	output = highlightAllMatches("Test TEST test TeSt", "test", true)
+	if output == "" {
+		t.Error("highlightAllMatches case-sensitive should produce output")
+	}
+
+	// No matches
+	output = highlightAllMatches("hello world", "xyz", false)
+	if output == "" {
+		t.Error("highlightAllMatches with no matches should produce output")
+	}
+
+	// Empty query
+	output = highlightAllMatches("hello world", "", false)
+	if output == "" {
+		t.Error("highlightAllMatches with empty query should produce output")
+	}
+
+	// UTF-8 support
+	output = highlightAllMatches("世界 hello 世界 world 世界", "世界", false)
+	if output == "" {
+		t.Error("highlightAllMatches with UTF-8 should produce output")
+	}
+	// Verify UTF-8 characters are preserved
+	if !strings.Contains(output, "hello") {
+		t.Error("highlightAllMatches UTF-8 output should preserve ASCII parts")
+	}
+
+	// Query longer than text
+	output = highlightAllMatches("hi", "hello world", false)
+	if output == "" {
+		t.Error("highlightAllMatches with query longer than text should produce output")
 	}
 }
 

@@ -225,6 +225,11 @@ type Plugin struct {
 	// Content search state (td-6ac70a: cross-conversation search)
 	contentSearchMode  bool                // True when content search modal is open
 	contentSearchState *ContentSearchState // Content search state
+
+	// Pending scroll target after messages load (td-b74d9f)
+	// Uses message ID (not index) to handle pagination correctly
+	pendingScrollMsgID  string // Target message ID to scroll to after load ("" = none)
+	pendingScrollActive bool   // True when we have a pending scroll request
 }
 
 // msgLineRange tracks which screen lines a message occupies (after scroll).
@@ -380,6 +385,10 @@ func (p *Plugin) resetState() {
 	// Content search state (td-6ac70a)
 	p.contentSearchMode = false
 	p.contentSearchState = nil
+
+	// Pending scroll state (td-b74d9f)
+	p.pendingScrollMsgID = ""
+	p.pendingScrollActive = false
 }
 
 // Init initializes the plugin with context.
@@ -465,7 +474,20 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 
 	case ui.SkeletonTickMsg:
 		// Forward tick to skeleton for animation (td-6cc19f)
-		return p, p.skeleton.Update(msg)
+		var cmds []tea.Cmd
+		if cmd := p.skeleton.Update(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		// Also forward to content search skeleton if modal is open (td-e740e4)
+		if p.contentSearchMode && p.contentSearchState != nil {
+			if cmd := p.contentSearchState.Skeleton.Update(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if len(cmds) > 0 {
+			return p, tea.Batch(cmds...)
+		}
+		return p, nil
 
 	case tea.MouseMsg:
 		return p.handleMouse(msg)
@@ -678,6 +700,41 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		// hasOlderMsgs: true when there are messages beyond the current window (td-07fc795d)
 		p.hasOlderMsgs = (msg.Offset + len(msg.Messages)) < msg.TotalCount
 
+		// Process pending scroll request from content search (td-b74d9f)
+		// Uses message ID (not index) to handle pagination correctly
+		if p.pendingScrollActive && p.pendingScrollMsgID != "" {
+			p.pendingScrollActive = false
+			targetMsgID := p.pendingScrollMsgID
+			p.pendingScrollMsgID = ""
+
+			// Find the message by ID in the loaded messages
+			foundIdx := -1
+			for i, m := range p.messages {
+				if m.ID == targetMsgID {
+					foundIdx = i
+					break
+				}
+			}
+
+			// If found, scroll to it
+			if foundIdx >= 0 {
+				// Find the corresponding visible index (skip tool-result-only messages)
+				visibleIndices := p.visibleMessageIndices()
+				for i, idx := range visibleIndices {
+					if idx >= foundIdx {
+						p.messageCursor = idx
+						p.ensureMessageCursorVisible()
+						break
+					}
+					// If we're at the last visible index, use it
+					if i == len(visibleIndices)-1 {
+						p.messageCursor = idx
+						p.ensureMessageCursorVisible()
+					}
+				}
+			}
+		}
+
 		return p, nil
 
 	case WatchStartedMsg:
@@ -772,8 +829,17 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 
 	case ContentSearchResultsMsg:
 		if p.contentSearchState != nil {
+			// Only accept results if query matches current query (td-5b9928: prevent stale results)
+			if msg.Query != p.contentSearchState.Query {
+				return p, nil // Discard stale results
+			}
 			p.contentSearchState.Results = msg.Results
 			p.contentSearchState.IsSearching = false
+			p.contentSearchState.Skeleton.Stop() // Stop skeleton animation (td-e740e4)
+			p.contentSearchState.Cursor = 0       // Reset cursor to first result
+			p.contentSearchState.ScrollOffset = 0 // Reset scroll
+			p.contentSearchState.TotalFound = msg.TotalMatches // (td-8e1a2b)
+			p.contentSearchState.Truncated = msg.Truncated     // (td-8e1a2b)
 			if msg.Error != nil {
 				p.contentSearchState.Error = msg.Error.Error()
 			} else {
@@ -782,25 +848,6 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		}
 		return p, nil
 
-	case scrollToMessageMsg:
-		// Scroll to a specific message index after messages are loaded (td-6ac70a)
-		if len(p.messages) > 0 && msg.MessageIdx >= 0 {
-			// Find the visible message index for the target
-			visibleIndices := p.visibleMessageIndices()
-			for i, idx := range visibleIndices {
-				if idx >= msg.MessageIdx {
-					p.messageCursor = idx
-					p.ensureMessageCursorVisible()
-					break
-				}
-				// If we're at the last visible index and haven't found it, use the last
-				if i == len(visibleIndices)-1 {
-					p.messageCursor = idx
-					p.ensureMessageCursorVisible()
-				}
-			}
-		}
-		return p, nil
 	}
 
 	return p, nil
@@ -813,10 +860,11 @@ func (p *Plugin) View(width, height int) string {
 	// Note: sidebarWidth is calculated in renderTwoPane, not here,
 	// to avoid resetting drag-adjusted widths on every render
 
-	// Handle content search modal overlay (td-6ac70a)
+	// Handle content search modal overlay (td-6ac70a, td-435ae6)
 	if p.contentSearchMode && p.contentSearchState != nil {
-		content := renderContentSearchModal(p.contentSearchState, width, height)
-		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(content)
+		background := p.renderTwoPane()
+		modalContent := renderContentSearchModal(p.contentSearchState, width, height)
+		return ui.OverlayModal(background, modalContent, width, height)
 	}
 
 	// Handle resume modal overlay (td-aa4136)
@@ -850,13 +898,13 @@ func (p *Plugin) SetFocused(f bool) { p.focused = f }
 
 // Commands returns the available commands.
 func (p *Plugin) Commands() []plugin.Command {
-	// Content search mode commands (td-6ac70a)
+	// Content search mode commands (td-6ac70a, td-2467e8: updated shortcuts)
 	if p.contentSearchMode {
 		return []plugin.Command{
 			{ID: "close", Name: "Close", Description: "Close search", Category: plugin.CategoryNavigation, Context: "conversations-content-search", Priority: 1},
 			{ID: "select", Name: "Select", Description: "Jump to result", Category: plugin.CategoryActions, Context: "conversations-content-search", Priority: 2},
-			{ID: "navigate", Name: "Nav", Description: "Navigate j/k", Category: plugin.CategoryNavigation, Context: "conversations-content-search", Priority: 3},
-			{ID: "expand", Name: "Expand", Description: "Toggle space", Category: plugin.CategoryView, Context: "conversations-content-search", Priority: 4},
+			{ID: "navigate", Name: "Nav", Description: "Navigate \u2191/\u2193", Category: plugin.CategoryNavigation, Context: "conversations-content-search", Priority: 3},
+			{ID: "expand", Name: "Expand", Description: "Toggle tab", Category: plugin.CategoryView, Context: "conversations-content-search", Priority: 4},
 			{ID: "regex", Name: "Regex", Description: "Toggle ctrl+r", Category: plugin.CategoryView, Context: "conversations-content-search", Priority: 5},
 			{ID: "case", Name: "Case", Description: "Toggle alt+c", Category: plugin.CategoryView, Context: "conversations-content-search", Priority: 6},
 		}

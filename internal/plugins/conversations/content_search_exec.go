@@ -3,6 +3,7 @@ package conversations
 
 import (
 	"context"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -12,19 +13,40 @@ import (
 )
 
 const (
-	// searchConcurrency is the max concurrent search goroutines.
-	searchConcurrency = 4
 	// searchTimeout is the max duration for the entire search operation.
 	searchTimeout = 30 * time.Second
+	// maxVisibleMatches is the visible match limit for UX (td-8e1a2b)
+	maxVisibleMatches = 100
 	// maxTotalMatches is the global match limit for early termination.
 	maxTotalMatches = 500
 	// debounceDelay is the delay before executing search after input.
 	debounceDelay = 200 * time.Millisecond
 )
 
+// searchConcurrency returns the concurrency limit based on CPU count (td-80cbe1).
+// We use NumCPU() to scale with the machine, with a minimum of 4 and max of 16.
+// Limits explained:
+//   - Min 4: Ensures reasonable parallelism even on low-end hardware
+//   - Max 16: Prevents excessive file descriptor usage and memory pressure
+//     from too many concurrent session file reads
+func searchConcurrency() int {
+	n := runtime.NumCPU()
+	if n < 4 {
+		return 4
+	}
+	if n > 16 {
+		return 16
+	}
+	return n
+}
+
 // RunContentSearch executes search across all sessions using their adapters.
 // Returns a tea.Cmd that produces ContentSearchResultsMsg when complete.
 // Search runs in parallel with concurrency limit, timeout, and match cap.
+// Performance optimizations (td-80cbe1):
+//   - Concurrency scales with CPU count
+//   - Sessions sorted by UpdatedAt (recent first for early results)
+//   - Empty sessions skipped
 func RunContentSearch(query string, sessions []adapter.Session,
 	adapters map[string]adapter.Adapter, opts adapter.SearchOptions) tea.Cmd {
 	return func() tea.Msg {
@@ -32,10 +54,19 @@ func RunContentSearch(query string, sessions []adapter.Session,
 			return ContentSearchResultsMsg{Results: nil}
 		}
 
+		// Performance: sort sessions by UpdatedAt descending before searching (td-80cbe1)
+		// This prioritizes recent sessions and improves perceived performance
+		sortedSessions := make([]adapter.Session, len(sessions))
+		copy(sortedSessions, sessions)
+		sort.Slice(sortedSessions, func(i, j int) bool {
+			return sortedSessions[i].UpdatedAt.After(sortedSessions[j].UpdatedAt)
+		})
+
 		var results []SessionSearchResult
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		sem := make(chan struct{}, searchConcurrency)
+		concurrency := searchConcurrency()
+		sem := make(chan struct{}, concurrency)
 
 		ctx, cancel := context.WithTimeout(context.Background(), searchTimeout)
 		defer cancel()
@@ -44,7 +75,12 @@ func RunContentSearch(query string, sessions []adapter.Session,
 		done := make(chan struct{})
 
 	sessionLoop:
-		for _, session := range sessions {
+		for _, session := range sortedSessions {
+			// Performance: skip sessions with no messages (td-80cbe1)
+			if session.MessageCount == 0 {
+				continue
+			}
+
 			// Check if we've hit the match limit
 			mu.Lock()
 			if totalMatches >= maxTotalMatches {
@@ -120,7 +156,71 @@ func RunContentSearch(query string, sessions []adapter.Session,
 			return results[i].Session.UpdatedAt.After(results[j].Session.UpdatedAt)
 		})
 
-		return ContentSearchResultsMsg{Results: results}
+		// Count total matches and cap visible results (td-8e1a2b)
+		totalFound := totalMatches
+		truncated := totalMatches > maxVisibleMatches
+
+		// Truncate results to maxVisibleMatches
+		if truncated {
+			visibleCount := 0
+			truncatedResults := make([]SessionSearchResult, 0, len(results))
+			for _, sr := range results {
+				if visibleCount >= maxVisibleMatches {
+					break
+				}
+				// Count matches in this session
+				sessionMatches := 0
+				for _, mm := range sr.Messages {
+					sessionMatches += len(mm.Matches)
+				}
+				if visibleCount+sessionMatches <= maxVisibleMatches {
+					// Include whole session
+					truncatedResults = append(truncatedResults, sr)
+					visibleCount += sessionMatches
+				} else {
+					// Need to truncate within this session
+					remaining := maxVisibleMatches - visibleCount
+					truncatedSession := SessionSearchResult{
+						Session:   sr.Session,
+						Collapsed: sr.Collapsed,
+					}
+					for _, mm := range sr.Messages {
+						if remaining <= 0 {
+							break
+						}
+						if len(mm.Matches) <= remaining {
+							truncatedSession.Messages = append(truncatedSession.Messages, mm)
+							remaining -= len(mm.Matches)
+						} else {
+							// Truncate matches within message
+							truncatedMsg := adapter.MessageMatch{
+								MessageID:  mm.MessageID,
+								MessageIdx: mm.MessageIdx,
+								Role:       mm.Role,
+								Timestamp:  mm.Timestamp,
+								Model:      mm.Model,
+								Matches:    mm.Matches[:remaining],
+							}
+							truncatedSession.Messages = append(truncatedSession.Messages, truncatedMsg)
+							remaining = 0
+						}
+					}
+					if len(truncatedSession.Messages) > 0 {
+						truncatedResults = append(truncatedResults, truncatedSession)
+					}
+					break
+				}
+			}
+			results = truncatedResults
+		}
+
+		// Include query in results for staleness validation (td-5b9928)
+		return ContentSearchResultsMsg{
+			Results:      results,
+			Query:        query,
+			TotalMatches: totalFound,
+			Truncated:    truncated,
+		}
 	}
 }
 

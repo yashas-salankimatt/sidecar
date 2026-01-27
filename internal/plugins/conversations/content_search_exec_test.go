@@ -124,8 +124,8 @@ func TestRunContentSearch_EmptyQuery(t *testing.T) {
 func TestRunContentSearch_BasicSearch(t *testing.T) {
 	now := time.Now()
 	sessions := []adapter.Session{
-		{ID: "s1", AdapterID: "mock", UpdatedAt: now},
-		{ID: "s2", AdapterID: "mock", UpdatedAt: now.Add(-time.Hour)},
+		{ID: "s1", AdapterID: "mock", UpdatedAt: now, MessageCount: 10},
+		{ID: "s2", AdapterID: "mock", UpdatedAt: now.Add(-time.Hour), MessageCount: 10},
 	}
 
 	mockAdp := &mockSearchAdapter{
@@ -219,9 +219,9 @@ func TestRunContentSearch_NoMatches(t *testing.T) {
 func TestRunContentSearch_SortsByRecency(t *testing.T) {
 	now := time.Now()
 	sessions := []adapter.Session{
-		{ID: "old", AdapterID: "mock", UpdatedAt: now.Add(-2 * time.Hour)},
-		{ID: "newest", AdapterID: "mock", UpdatedAt: now},
-		{ID: "middle", AdapterID: "mock", UpdatedAt: now.Add(-time.Hour)},
+		{ID: "old", AdapterID: "mock", UpdatedAt: now.Add(-2 * time.Hour), MessageCount: 10},
+		{ID: "newest", AdapterID: "mock", UpdatedAt: now, MessageCount: 10},
+		{ID: "middle", AdapterID: "mock", UpdatedAt: now.Add(-time.Hour), MessageCount: 10},
 	}
 
 	mockAdp := &mockSearchAdapter{
@@ -260,7 +260,7 @@ func TestRunContentSearch_ConcurrentExecution(t *testing.T) {
 	now := time.Now()
 	for i := 0; i < 20; i++ {
 		id := string(rune('a' + i))
-		sessions[i] = adapter.Session{ID: id, AdapterID: "mock", UpdatedAt: now.Add(-time.Duration(i) * time.Minute)}
+		sessions[i] = adapter.Session{ID: id, AdapterID: "mock", UpdatedAt: now.Add(-time.Duration(i) * time.Minute), MessageCount: 10}
 		results[id] = []adapter.MessageMatch{{MessageID: "m" + id, Matches: []adapter.ContentMatch{{LineNo: i}}}}
 	}
 

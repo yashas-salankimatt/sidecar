@@ -22,7 +22,8 @@ func (p *Plugin) handleContentSearchKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd)
 	case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 		return p, p.jumpToSearchResult()
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("j", "down"))):
+	case key.Matches(msg, key.NewBinding(key.WithKeys("down"))):
+		// Use only arrow keys for navigation to allow typing letters (td-2467e8)
 		if p.contentSearchState != nil {
 			p.contentSearchState.Cursor++
 			p.contentSearchState.ClampCursor()
@@ -30,7 +31,7 @@ func (p *Plugin) handleContentSearchKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd)
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("k", "up"))):
+	case key.Matches(msg, key.NewBinding(key.WithKeys("up"))):
 		if p.contentSearchState != nil {
 			p.contentSearchState.Cursor--
 			p.contentSearchState.ClampCursor()
@@ -38,8 +39,8 @@ func (p *Plugin) handleContentSearchKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd)
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("n"))):
-		// Jump to next match (skips session and message rows)
+	case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+n"))):
+		// Jump to next match (skips session and message rows) - ctrl+n instead of n (td-2467e8)
 		if p.contentSearchState != nil {
 			nextIdx := p.contentSearchState.NextMatchIndex(p.contentSearchState.Cursor)
 			if nextIdx >= 0 {
@@ -49,8 +50,8 @@ func (p *Plugin) handleContentSearchKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd)
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("N"))):
-		// Jump to previous match (skips session and message rows)
+	case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+p"))):
+		// Jump to previous match (skips session and message rows) - ctrl+p instead of N (td-2467e8)
 		if p.contentSearchState != nil {
 			prevIdx := p.contentSearchState.PrevMatchIndex(p.contentSearchState.Cursor)
 			if prevIdx >= 0 {
@@ -60,16 +61,16 @@ func (p *Plugin) handleContentSearchKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd)
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("left", "h"))):
-		// Move to session (navigate up in hierarchy)
+	case key.Matches(msg, key.NewBinding(key.WithKeys("left"))):
+		// Move to session (navigate up in hierarchy) - only arrow key, not 'h' (td-2467e8)
 		if p.contentSearchState != nil {
 			p.contentSearchState.MoveToSession()
 			p.contentSearchState.EnsureCursorVisible(p.contentSearchViewportHeight())
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("right", " "))):
-		// Toggle collapse/expand for session
+	case key.Matches(msg, key.NewBinding(key.WithKeys("right", "tab"))):
+		// Toggle collapse/expand for session - use tab instead of space (td-2467e8)
 		if p.contentSearchState != nil {
 			p.contentSearchState.ToggleCollapse()
 			p.contentSearchState.ClampCursor()
@@ -110,16 +111,16 @@ func (p *Plugin) handleContentSearchKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd)
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("g"))):
-		// Go to top
+	case key.Matches(msg, key.NewBinding(key.WithKeys("home", "ctrl+a"))):
+		// Go to top - ctrl+a instead of g (td-2467e8)
 		if p.contentSearchState != nil {
 			p.contentSearchState.Cursor = 0
 			p.contentSearchState.ScrollOffset = 0
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("G"))):
-		// Go to bottom
+	case key.Matches(msg, key.NewBinding(key.WithKeys("end", "ctrl+e"))):
+		// Go to bottom - ctrl+e instead of G (td-2467e8)
 		if p.contentSearchState != nil {
 			flatLen := p.contentSearchState.FlatLen()
 			if flatLen > 0 {
@@ -129,15 +130,15 @@ func (p *Plugin) handleContentSearchKey(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd)
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("E"))):
-		// Expand all sessions
+	case key.Matches(msg, key.NewBinding(key.WithKeys("alt+e"))):
+		// Expand all sessions - alt+e instead of E (td-2467e8)
 		if p.contentSearchState != nil {
 			p.contentSearchState.ExpandAll()
 		}
 		return p, nil
 
-	case key.Matches(msg, key.NewBinding(key.WithKeys("C"))):
-		// Collapse all sessions
+	case key.Matches(msg, key.NewBinding(key.WithKeys("alt+x"))):
+		// Collapse all sessions - alt+x instead of C (td-2467e8)
 		if p.contentSearchState != nil {
 			p.contentSearchState.CollapseAll()
 			p.contentSearchState.ClampCursor()
@@ -173,26 +174,42 @@ func (p *Plugin) openContentSearch() (plugin.Plugin, tea.Cmd) {
 	return p, nil
 }
 
+// minQueryLength is the minimum characters required before search triggers (td-5dcadc)
+const minQueryLength = 2
+
 // triggerContentSearch initiates a debounced search.
 func (p *Plugin) triggerContentSearch() tea.Cmd {
 	if p.contentSearchState == nil {
 		return nil
 	}
+
+	// Require minimum query length (td-5dcadc)
+	queryRunes := []rune(p.contentSearchState.Query)
+	if len(queryRunes) < minQueryLength {
+		// Clear results when query is too short
+		p.contentSearchState.Results = nil
+		p.contentSearchState.IsSearching = false
+		p.contentSearchState.Cursor = 0
+		p.contentSearchState.ScrollOffset = 0
+		p.contentSearchState.Skeleton.Stop() // Stop skeleton animation (td-e740e4)
+		return nil
+	}
+
 	p.contentSearchState.DebounceVersion++
 	p.contentSearchState.IsSearching = true
 	p.contentSearchState.Error = ""
-	return scheduleContentSearch(p.contentSearchState.Query, p.contentSearchState.DebounceVersion)
+
+	// Start skeleton animation for search in progress (td-e740e4)
+	return tea.Batch(
+		scheduleContentSearch(p.contentSearchState.Query, p.contentSearchState.DebounceVersion),
+		p.contentSearchState.Skeleton.Start(),
+	)
 }
 
 // contentSearchViewportHeight returns the viewport height for the content search results.
 func (p *Plugin) contentSearchViewportHeight() int {
 	// Modal height minus header, options, stats sections
 	return p.height - 14
-}
-
-// scrollToMessageMsg is used to scroll to a specific message after loading.
-type scrollToMessageMsg struct {
-	MessageIdx int
 }
 
 // jumpToSearchResult selects the session and message from the current search result.
@@ -233,19 +250,20 @@ func (p *Plugin) jumpToSearchResult() tea.Cmd {
 	p.activePane = PaneMessages
 	p.contentSearchState = nil
 
+	// Set pending scroll target if we have a specific message to jump to (td-b74d9f)
+	// This will be processed after messages are loaded in MessagesLoadedMsg handler
+	// Use message ID (not index) to handle pagination correctly
+	if msgMatch != nil && msgMatch.MessageID != "" {
+		p.pendingScrollMsgID = msgMatch.MessageID
+		p.pendingScrollActive = true
+	} else {
+		p.pendingScrollMsgID = ""
+		p.pendingScrollActive = false
+	}
+
 	// Build commands to load messages
-	cmds := []tea.Cmd{
+	return tea.Batch(
 		p.loadMessages(session.ID),
 		p.loadUsage(session.ID),
-	}
-
-	// If we have a specific message to jump to, scroll to it after loading
-	if msgMatch != nil {
-		targetMsgIdx := msgMatch.MessageIdx
-		cmds = append(cmds, func() tea.Msg {
-			return scrollToMessageMsg{MessageIdx: targetMsgIdx}
-		})
-	}
-
-	return tea.Batch(cmds...)
+	)
 }

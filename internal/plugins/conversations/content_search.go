@@ -4,6 +4,7 @@ package conversations
 
 import (
 	"github.com/marcus/sidecar/internal/adapter"
+	"github.com/marcus/sidecar/internal/ui"
 )
 
 // ContentSearchState holds cross-conversation search state.
@@ -17,6 +18,9 @@ type ContentSearchState struct {
 	IsSearching     bool                  // True while search is in progress
 	Error           string                // Error message if search failed
 	DebounceVersion int                   // For debouncing search requests
+	TotalFound      int                   // Total matches found before truncation (td-8e1a2b)
+	Truncated       bool                  // True if results were truncated (td-8e1a2b)
+	Skeleton        ui.Skeleton           // Animated skeleton loader for search in progress (td-e740e4)
 }
 
 // SessionSearchResult represents a session with matching messages.
@@ -34,16 +38,22 @@ type ContentSearchDebounceMsg struct {
 
 // ContentSearchResultsMsg carries search results back to the plugin.
 type ContentSearchResultsMsg struct {
-	Results []SessionSearchResult // Search results by session
-	Error   error                 // Error if search failed
+	Results      []SessionSearchResult // Search results by session
+	Error        error                 // Error if search failed
+	Query        string                // The query these results are for (td-5b9928)
+	TotalMatches int                   // Total matches found before truncation (td-8e1a2b)
+	Truncated    bool                  // True if results were truncated (td-8e1a2b)
 }
 
 // NewContentSearchState creates a new content search state with defaults.
 func NewContentSearchState() *ContentSearchState {
+	// Skeleton with varied row widths for search results look (td-e740e4)
+	skeleton := ui.NewSkeleton(8, []int{90, 70, 65, 85, 75, 60, 80, 55})
 	return &ContentSearchState{
 		Results:       make([]SessionSearchResult, 0),
 		UseRegex:      false,
 		CaseSensitive: false,
+		Skeleton:      skeleton,
 	}
 }
 

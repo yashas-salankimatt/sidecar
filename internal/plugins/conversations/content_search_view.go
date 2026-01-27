@@ -32,6 +32,13 @@ func renderContentSearchModal(state *ContentSearchState, width, height int) stri
 		modalWidth = 100
 	}
 
+	// Reserve space for app header/footer and modal chrome (td-9003c0)
+	// 4 rows: 1 header + 1 footer + 2 margin for modal border/padding
+	effectiveHeight := height - 4
+	if effectiveHeight < 10 {
+		effectiveHeight = 10
+	}
+
 	// Build modal using the modal package
 	m := modal.New("Search conversations",
 		modal.WithWidth(modalWidth),
@@ -41,11 +48,11 @@ func renderContentSearchModal(state *ContentSearchState, width, height int) stri
 		AddSection(modal.Spacer()).
 		AddSection(contentSearchOptionsSection(state)).
 		AddSection(modal.Spacer()).
-		AddSection(contentSearchResultsSection(state, height-14, modalWidth-6)).
+		AddSection(contentSearchResultsSection(state, effectiveHeight-14, modalWidth-6)).
 		AddSection(modal.Spacer()).
 		AddSection(contentSearchStatsSection(state))
 
-	return m.Render(width, height, nil)
+	return m.Render(width, effectiveHeight, nil)
 }
 
 // contentSearchHeaderSection creates the search input header section.
@@ -130,13 +137,18 @@ func contentSearchResultsSection(state *ContentSearchState, viewportHeight, cont
 				contentWidth = cw
 			}
 
-			// Handle empty states
+			// Handle empty states (td-5dcadc: require minimum query length)
 			if len(state.Results) == 0 {
-				if state.Query == "" {
+				queryRunes := []rune(state.Query)
+				if len(queryRunes) == 0 {
 					return modal.RenderedSection{Content: styles.Muted.Render("Enter a search query...")}
 				}
+				if len(queryRunes) < 2 {
+					return modal.RenderedSection{Content: styles.Muted.Render("Type at least 2 characters to search...")}
+				}
 				if state.IsSearching {
-					return modal.RenderedSection{Content: styles.Muted.Render("Searching...")}
+					// Show animated skeleton loader while searching (td-e740e4)
+					return modal.RenderedSection{Content: state.Skeleton.View(contentWidth)}
 				}
 				return modal.RenderedSection{Content: styles.Muted.Render("No matches found")}
 			}
@@ -167,7 +179,7 @@ func contentSearchResultsSection(state *ContentSearchState, viewportHeight, cont
 					// Match rows
 					for mti, match := range msg.Matches {
 						matchSelected := flatIdx == state.Cursor
-						matchLine := renderMatchLine(match, state.Query, matchSelected, contentWidth, si, mi, mti)
+						matchLine := renderMatchLine(match, state.Query, state.CaseSensitive, matchSelected, contentWidth, si, mi, mti)
 						allLines = append(allLines, matchLine)
 						flatIdx++
 					}
@@ -228,20 +240,27 @@ func contentSearchStatsSection(state *ContentSearchState) modal.Section {
 		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
 			var sb strings.Builder
 
-			// Stats line
-			totalMatches := state.TotalMatches()
+			// Stats line (td-8e1a2b: show truncation indicator)
+			visibleMatches := state.TotalMatches()
 			sessionCount := state.SessionCount()
 
-			if totalMatches > 0 {
-				statsText := fmt.Sprintf("%d matches in %d sessions", totalMatches, sessionCount)
+			if visibleMatches > 0 {
+				var statsText string
+				if state.Truncated {
+					// Show "X of Y+ matches" when truncated
+					statsText = fmt.Sprintf("Showing %d of %d+ matches in %d sessions",
+						visibleMatches, state.TotalFound, sessionCount)
+				} else {
+					statsText = fmt.Sprintf("%d matches in %d sessions", visibleMatches, sessionCount)
+				}
 				sb.WriteString(styles.Subtitle.Render(statsText))
 				sb.WriteString("  ")
 			}
 
-			// Navigation hints
-			hints := "[j/k nav] [enter select] [space expand/collapse] [esc close]"
+			// Navigation hints (td-2467e8: updated to use non-conflicting shortcuts)
+			hints := "[\u2191\u2193 nav] [enter select] [tab expand] [esc close]"
 			if contentWidth < 60 {
-				hints = "[j/k] [enter] [space] [esc]"
+				hints = "[\u2191\u2193] [enter] [tab] [esc]"
 			}
 			sb.WriteString(styles.Muted.Render(hints))
 
@@ -412,15 +431,15 @@ func renderMessageHeader(msg adapter.MessageMatch, selected bool, maxWidth int) 
 
 // renderMatchLine renders a single match line within a message.
 // Format:       |  Line N: ...text with **highlighted** match...
-func renderMatchLine(match adapter.ContentMatch, _ string, selected bool, maxWidth int, _, _, _ int) string {
+// Highlights ALL occurrences of the query in the line (td-c24c84).
+func renderMatchLine(match adapter.ContentMatch, query string, caseSensitive, selected bool, maxWidth int, _, _, _ int) string {
 	var sb strings.Builder
 
 	indent := "      " // 6 spaces for matches under messages
 	linePrefix := fmt.Sprintf("\u2502  Line %d: ", match.LineNo)
 
-	// Get the line text and highlight the match
-	lineText := match.LineText
-	lineText = strings.TrimSpace(lineText)
+	// Modify the line for display
+	lineText := strings.TrimSpace(match.LineText)
 	lineText = strings.ReplaceAll(lineText, "\n", " ")
 
 	// Calculate available width for content
@@ -430,19 +449,31 @@ func renderMatchLine(match adapter.ContentMatch, _ string, selected bool, maxWid
 		contentWidth = 20
 	}
 
-	// Convert byte indices to rune indices for proper UTF-8 handling
-	// match.ColStart and match.ColEnd are byte indices from regexp
 	runes := []rune(lineText)
 	runeLen := len(runes)
 
-	colStart := byteToRuneIndex(lineText, match.ColStart)
-	colEnd := byteToRuneIndex(lineText, match.ColEnd)
+	// Find the first occurrence position for context window centering
+	// (we still need to center around where the match actually is)
+	var colStart, colEnd int
+	searchText := lineText
+	searchQuery := query
+	if !caseSensitive {
+		searchText = strings.ToLower(lineText)
+		searchQuery = strings.ToLower(query)
+	}
+	idx := strings.Index(searchText, searchQuery)
+	if idx >= 0 {
+		colStart = byteToRuneIndex(lineText, idx)
+		colEnd = byteToRuneIndex(lineText, idx+len(query))
+	} else {
+		// Fallback to original positions if query not found
+		colStart = byteToRuneIndex(lineText, match.ColStart)
+		colEnd = byteToRuneIndex(lineText, match.ColEnd)
+	}
 
-	// Apply context window around match
-	displayRunes := runes
 	displayText := lineText
 
-	// If line is too long, show context around the match
+	// If line is too long, show context around the first match
 	if runeLen > contentWidth {
 		// Calculate context window
 		contextBefore := 15
@@ -470,23 +501,7 @@ func renderMatchLine(match adapter.ContentMatch, _ string, selected bool, maxWid
 			suffix = "..."
 		}
 
-		// Adjust column positions for the new substring
-		newColStart := colStart - start + utf8.RuneCountInString(prefix)
-		newColEnd := colEnd - start + utf8.RuneCountInString(prefix)
-
-		displayRunes = runes[start:end]
-		displayText = prefix + string(displayRunes) + suffix
-		colStart = newColStart
-		colEnd = newColEnd
-
-		// Clamp to valid range
-		if colStart < 0 {
-			colStart = 0
-		}
-		displayRuneLen := utf8.RuneCountInString(displayText)
-		if colEnd > displayRuneLen {
-			colEnd = displayRuneLen
-		}
+		displayText = prefix + string(runes[start:end]) + suffix
 	}
 
 	// Final truncation if still too long
@@ -494,10 +509,6 @@ func renderMatchLine(match adapter.ContentMatch, _ string, selected bool, maxWid
 	if displayRuneLen > contentWidth {
 		displayRunes := []rune(displayText)
 		displayText = string(displayRunes[:contentWidth-3]) + "..."
-		displayRuneLen = utf8.RuneCountInString(displayText)
-		if colEnd > displayRuneLen {
-			colEnd = displayRuneLen
-		}
 	}
 
 	if selected {
@@ -511,12 +522,12 @@ func renderMatchLine(match adapter.ContentMatch, _ string, selected bool, maxWid
 		return styles.ListItemSelected.Render(content)
 	}
 
-	// Styled content with highlighted match
+	// Styled content with ALL matches highlighted (td-c24c84)
 	sb.WriteString(indent)
 	sb.WriteString(styles.Muted.Render(linePrefix))
 
-	// Highlight the matched portion (using rune indices)
-	highlightedText := highlightMatchRunes(displayText, colStart, colEnd)
+	// Highlight all occurrences of the query
+	highlightedText := highlightAllMatches(displayText, query, caseSensitive)
 	sb.WriteString(highlightedText)
 
 	return sb.String()
@@ -551,6 +562,77 @@ func highlightMatchRunes(text string, colStart, colEnd int) string {
 	// After match
 	if colEnd < runeLen {
 		sb.WriteString(styles.Muted.Render(string(runes[colEnd:])))
+	}
+
+	return sb.String()
+}
+
+// highlightAllMatches highlights ALL occurrences of query in text (td-c24c84).
+// This provides better visual feedback by showing every match, not just the first.
+// Uses rune-safe iteration for UTF-8 support.
+func highlightAllMatches(text, query string, caseSensitive bool) string {
+	if query == "" {
+		return styles.Muted.Render(text)
+	}
+
+	runes := []rune(text)
+	runeLen := len(runes)
+	queryRunes := []rune(query)
+	queryLen := len(queryRunes)
+
+	if queryLen == 0 || queryLen > runeLen {
+		return styles.Muted.Render(text)
+	}
+
+	// Prepare search text (case-fold if needed)
+	searchRunes := runes
+	searchQuery := queryRunes
+	if !caseSensitive {
+		searchRunes = []rune(strings.ToLower(string(runes)))
+		searchQuery = []rune(strings.ToLower(string(queryRunes)))
+	}
+
+	// Find all match positions (as rune indices)
+	var matches [][2]int // [start, end] pairs
+	for i := 0; i <= runeLen-queryLen; i++ {
+		found := true
+		for j := 0; j < queryLen; j++ {
+			if searchRunes[i+j] != searchQuery[j] {
+				found = false
+				break
+			}
+		}
+		if found {
+			matches = append(matches, [2]int{i, i + queryLen})
+			i += queryLen - 1 // Skip past this match to avoid overlaps
+		}
+	}
+
+	if len(matches) == 0 {
+		return styles.Muted.Render(text)
+	}
+
+	// Build result string with highlighted matches
+	matchStyle := lipgloss.NewStyle().
+		Background(styles.Warning).   // Yellow/amber background
+		Foreground(styles.BgPrimary). // Dark text for contrast
+		Bold(true)
+
+	var sb strings.Builder
+	pos := 0
+	for _, m := range matches {
+		start, end := m[0], m[1]
+		// Add text before this match
+		if pos < start {
+			sb.WriteString(styles.Muted.Render(string(runes[pos:start])))
+		}
+		// Add highlighted match
+		sb.WriteString(matchStyle.Render(string(runes[start:end])))
+		pos = end
+	}
+	// Add remaining text after last match
+	if pos < runeLen {
+		sb.WriteString(styles.Muted.Render(string(runes[pos:])))
 	}
 
 	return sb.String()
