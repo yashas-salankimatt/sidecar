@@ -343,7 +343,7 @@ func (m *Model) renderWorktreeSwitcherModal(content string) string {
 }
 
 // handleWorktreeSwitcherMouse handles mouse events for the worktree switcher modal.
-func (m Model) handleWorktreeSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleWorktreeSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.ensureWorktreeSwitcherModal()
 	if m.worktreeSwitcherModal == nil {
 		return m, nil

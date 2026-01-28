@@ -209,6 +209,7 @@ type Model struct {
 	updateChangelog       string // Full changelog content
 	changelogVisible      bool
 	changelogScrollOffset int
+	changelogScrollState  *changelogViewState // Shared state for modal closure
 
 	// Update modal (declarative)
 	updatePreviewModal        *modal.Modal

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/sidecar/internal/features"
 	"github.com/marcus/sidecar/internal/msg"
 	"github.com/marcus/sidecar/internal/styles"
@@ -299,7 +300,8 @@ func (p *Plugin) renderInlineEditorContent(visibleHeight int) string {
 		sb.WriteString(strings.Join(lines, "\n"))
 	}
 
-	return sb.String()
+	// Enforce total height constraint per CLAUDE.md
+	return lipgloss.NewStyle().Height(visibleHeight).Render(sb.String())
 }
 
 // renderExitConfirmation renders the exit confirmation dialog overlay.

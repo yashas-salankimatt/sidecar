@@ -549,6 +549,29 @@ func (p *Plugin) killTabEditSession(index int) {
 	}
 }
 
+// closeTabsForPath kills edit sessions and removes tabs matching the deleted path.
+// Handles both files (exact match) and directories (prefix match).
+func (p *Plugin) closeTabsForPath(deletedPath string) {
+	deletedPath = filepath.Clean(deletedPath)
+	// Iterate backwards to safely remove tabs by index
+	for i := len(p.tabs) - 1; i >= 0; i-- {
+		tabPath := filepath.Clean(p.tabs[i].Path)
+		if tabPath == deletedPath || strings.HasPrefix(tabPath, deletedPath+string(filepath.Separator)) {
+			p.killTabEditSession(i)
+			if i == p.activeTab && p.inlineEditMode {
+				p.clearPluginEditState()
+			}
+			p.tabs = append(p.tabs[:i], p.tabs[i+1:]...)
+			if p.activeTab > i || p.activeTab >= len(p.tabs) {
+				p.activeTab--
+			}
+		}
+	}
+	if p.activeTab < 0 {
+		p.activeTab = 0
+	}
+}
+
 // cleanupAllEditSessions kills all tmux edit sessions for all tabs.
 // Called on plugin exit to ensure no orphan tmux sessions remain.
 func (p *Plugin) cleanupAllEditSessions() {

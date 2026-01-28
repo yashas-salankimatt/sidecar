@@ -19,6 +19,16 @@ import (
 
 const changelogURL = "https://raw.githubusercontent.com/marcus/sidecar/main/CHANGELOG.md"
 
+// changelogViewState holds mutable state shared between the model and the
+// modal's Custom section closure. Using a heap-allocated struct avoids
+// rebuilding the modal on every scroll event (bubbletea value semantics
+// would otherwise make the closure capture a stale model pointer).
+type changelogViewState struct {
+	ScrollOffset    int
+	RenderedLines   []string
+	MaxVisibleLines int
+}
+
 // updateModalWidth returns the appropriate modal width based on screen size.
 func (m *Model) updateModalWidth() int {
 	modalW := 60
@@ -269,11 +279,18 @@ func (m *Model) renderUpdateProgressModal() string {
 	cancelHint := lipgloss.NewStyle().Foreground(styles.TextMuted).Render("Esc: cancel")
 	sb.WriteString(centerText(cancelHint, contentW))
 
+	// Constrain modal height to available space per CLAUDE.md
+	maxHeight := m.height - 4
+	if maxHeight < 10 {
+		maxHeight = 10
+	}
+
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(styles.TextMuted).
 		Padding(1, 2).
-		Width(modalW)
+		Width(modalW).
+		MaxHeight(maxHeight)
 
 	return modalStyle.Render(sb.String())
 }
@@ -425,7 +442,7 @@ func (m *Model) getChangelogModalWidth() int {
 
 // ensureChangelogModal creates/updates the changelog modal with caching.
 // The modal is only rebuilt when width or height changes. Scroll offset changes
-// are handled dynamically by the Custom section reading from model fields.
+// are handled dynamically via the shared changelogScrollState pointer.
 func (m *Model) ensureChangelogModal() {
 	modalW := m.getChangelogModalWidth()
 	contentW := modalW - 6 // borders + padding
@@ -459,14 +476,25 @@ func (m *Model) ensureChangelogModal() {
 	renderedContent := m.renderReleaseNotes(content, contentW)
 	m.changelogRenderedLines = strings.Split(renderedContent, "\n")
 
-	// Create a custom section that handles scrolling dynamically
-	// The closure reads from model fields so scroll changes don't require rebuild
+	// Initialize or update the shared scroll state
+	if m.changelogScrollState == nil {
+		m.changelogScrollState = &changelogViewState{}
+	}
+	m.changelogScrollState.RenderedLines = m.changelogRenderedLines
+	m.changelogScrollState.MaxVisibleLines = maxContentLines
+
+	// Capture shared pointer - survives bubbletea value copies
+	state := m.changelogScrollState
+
+	// Create a custom section that handles scrolling dynamically.
+	// The closure reads from the shared state pointer so scroll changes
+	// don't require rebuilding the modal.
 	scrollSection := modal.Custom(func(cw int, focusID, hoverID string) modal.RenderedSection {
-		lines := m.changelogRenderedLines
-		maxVisible := m.changelogMaxVisibleLines
+		lines := state.RenderedLines
+		maxVisible := state.MaxVisibleLines
 
 		// Apply scroll offset with clamping
-		startLine := m.changelogScrollOffset
+		startLine := state.ScrollOffset
 		maxStart := len(lines) - maxVisible
 		if maxStart < 0 {
 			maxStart = 0
@@ -515,6 +543,15 @@ func (m *Model) clearChangelogModal() {
 	m.changelogMouseHandler = nil
 	m.changelogRenderedLines = nil
 	m.changelogMaxVisibleLines = 0
+	m.changelogScrollState = nil
+}
+
+// syncChangelogScroll updates the shared scroll state from the model field.
+// Call this after modifying changelogScrollOffset instead of clearChangelogModal.
+func (m *Model) syncChangelogScroll() {
+	if m.changelogScrollState != nil {
+		m.changelogScrollState.ScrollOffset = m.changelogScrollOffset
+	}
 }
 
 // fetchChangelog fetches the CHANGELOG.md from GitHub.

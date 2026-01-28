@@ -1185,7 +1185,7 @@ func isGlobalRefreshContext(ctx string) bool {
 }
 
 // handleProjectSwitcherMouse handles mouse events for the project switcher modal.
-func (m Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.ensureProjectSwitcherModal()
 	if m.projectSwitcherModal == nil {
 		return m, nil
@@ -1232,7 +1232,7 @@ func (m Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd)
 }
 
 // handleThemeSwitcherMouse handles mouse events for the theme switcher modal.
-func (m Model) handleThemeSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleThemeSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.ensureThemeSwitcherModal()
 	if m.themeSwitcherModal == nil {
 		return m, nil
@@ -1266,7 +1266,7 @@ func (m Model) handleThemeSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleQuitConfirmMouse handles mouse events for the quit confirmation modal.
-func (m Model) handleHelpModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleHelpModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.ensureHelpModal()
 	if m.helpModal == nil {
 		return m, nil
@@ -1276,7 +1276,7 @@ func (m Model) handleHelpModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleUpdateModalKey handles keyboard input for the update modal.
-func (m Model) handleUpdateModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleUpdateModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	// Handle changelog overlay first if visible
@@ -1284,35 +1284,36 @@ func (m Model) handleUpdateModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "j", "down":
 			m.changelogScrollOffset++
-			m.clearChangelogModal() // Must rebuild - closure captures stale model pointer
+			m.syncChangelogScroll()
 			return m, nil
 		case "k", "up":
 			if m.changelogScrollOffset > 0 {
 				m.changelogScrollOffset--
-				m.clearChangelogModal()
+				m.syncChangelogScroll()
 			}
 			return m, nil
 		case "ctrl+d", "pgdown":
 			m.changelogScrollOffset += 10
-			m.clearChangelogModal()
+			m.syncChangelogScroll()
 			return m, nil
 		case "ctrl+u", "pgup":
 			m.changelogScrollOffset -= 10
 			if m.changelogScrollOffset < 0 {
 				m.changelogScrollOffset = 0
 			}
-			m.clearChangelogModal()
+			m.syncChangelogScroll()
 			return m, nil
 		case "g":
 			m.changelogScrollOffset = 0
-			m.clearChangelogModal()
+			m.syncChangelogScroll()
 			return m, nil
 		case "G":
 			m.changelogScrollOffset = 999999 // Will be clamped during render
-			m.clearChangelogModal()
+			m.syncChangelogScroll()
 			return m, nil
 		case "esc", "c", "q":
 			m.changelogVisible = false
+			m.changelogScrollOffset = 0
 			m.clearChangelogModal()
 			return m, nil
 		}
@@ -1322,6 +1323,7 @@ func (m Model) handleUpdateModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			action, _ := m.changelogModal.HandleKey(msg)
 			if action == "cancel" {
 				m.changelogVisible = false
+				m.changelogScrollOffset = 0
 				m.clearChangelogModal()
 				return m, nil
 			}
@@ -1444,14 +1446,14 @@ func (m Model) handleUpdateModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleUpdateModalMouse handles mouse events for the update modal.
-func (m Model) handleUpdateModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleUpdateModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Handle changelog overlay first if visible
 	if m.changelogVisible {
 		m.ensureChangelogModal()
 		if m.changelogMouseHandler == nil {
 			m.changelogMouseHandler = mouse.NewHandler()
 		}
-		// Handle scroll events - must clear modal because closure captures stale model pointer
+		// Handle scroll events via shared state pointer (no modal rebuild needed)
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
 			if m.changelogScrollOffset > 0 {
@@ -1459,12 +1461,12 @@ func (m Model) handleUpdateModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				if m.changelogScrollOffset < 0 {
 					m.changelogScrollOffset = 0
 				}
-				m.clearChangelogModal()
+				m.syncChangelogScroll()
 			}
 			return m, nil
 		case tea.MouseButtonWheelDown:
 			m.changelogScrollOffset += 3
-			m.clearChangelogModal()
+			m.syncChangelogScroll()
 			return m, nil
 		}
 		// Handle modal interaction (close button, backdrop)
@@ -1472,6 +1474,7 @@ func (m Model) handleUpdateModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			action := m.changelogModal.HandleMouse(msg, m.changelogMouseHandler)
 			if action == "cancel" {
 				m.changelogVisible = false
+				m.changelogScrollOffset = 0
 				m.clearChangelogModal()
 				return m, nil
 			}
@@ -1551,7 +1554,7 @@ func (m Model) handleUpdateModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleQuitConfirmMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleQuitConfirmMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	action := m.quitModal.HandleMouse(msg, m.quitMouseHandler)
 	switch action {
 	case "quit":
@@ -1699,7 +1702,7 @@ func (m *Model) handleProjectAddCommunityKeys(msg tea.KeyMsg) (tea.Model, tea.Cm
 }
 
 // handleCommunityBrowserKey handles key events in the community browser sub-mode.
-func (m Model) handleCommunityBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleCommunityBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	schemes := m.communityBrowserFiltered
 	const maxVisible = 8
 
@@ -1825,7 +1828,7 @@ func (m *Model) previewCommunityScheme() {
 }
 
 // handleCommunityBrowserMouse handles mouse events for the community browser modal.
-func (m Model) handleCommunityBrowserMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleCommunityBrowserMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	schemes := m.communityBrowserFiltered
 	maxVisible := 8
 	visibleCount := len(schemes)

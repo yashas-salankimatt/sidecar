@@ -27,7 +27,7 @@ func TestCommunityBrowserFilterAndView(t *testing.T) {
 	query := "no-such-theme-xyz123"
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(query)}
 	updated, _ := m.handleCommunityBrowserKey(msg)
-	m = updated.(Model)
+	m = *updated.(*Model)
 
 	if m.communityBrowserInput.Value() != query {
 		t.Errorf("communityBrowserInput = %q, want %q", m.communityBrowserInput.Value(), query)
@@ -60,19 +60,19 @@ func TestCommunityBrowserCursorMovement(t *testing.T) {
 
 	start := m.communityBrowserCursor
 	updated, _ := m.handleCommunityBrowserKey(tea.KeyMsg{Type: tea.KeyDown})
-	m = updated.(Model)
+	m = *updated.(*Model)
 	if m.communityBrowserCursor != start+1 {
 		t.Errorf("cursor after down = %d, want %d", m.communityBrowserCursor, start+1)
 	}
 
 	updated, _ = m.handleCommunityBrowserKey(tea.KeyMsg{Type: tea.KeyUp})
-	m = updated.(Model)
+	m = *updated.(*Model)
 	if m.communityBrowserCursor != start {
 		t.Errorf("cursor after up = %d, want %d", m.communityBrowserCursor, start)
 	}
 
 	updated, _ = m.handleCommunityBrowserKey(tea.KeyMsg{Type: tea.KeyUp})
-	m = updated.(Model)
+	m = *updated.(*Model)
 	if m.communityBrowserCursor != 0 {
 		t.Errorf("cursor after clamp up = %d, want 0", m.communityBrowserCursor)
 	}

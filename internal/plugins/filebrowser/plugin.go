@@ -650,6 +650,8 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		p.fileOpTarget = nil
 		p.fileOpError = ""
 		p.fileOpConfirmDelete = false
+		// Clean up tabs for the deleted file/directory
+		p.closeTabsForPath(msg.Path)
 		return p, p.refresh()
 
 	case PasteSuccessMsg:

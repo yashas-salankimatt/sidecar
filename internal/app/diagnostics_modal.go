@@ -236,7 +236,7 @@ func (m *Model) renderDiagnosticsModal(content string) string {
 }
 
 // handleDiagnosticsModalMouse handles mouse events for the diagnostics modal.
-func (m Model) handleDiagnosticsModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleDiagnosticsModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.ensureDiagnosticsModal()
 	if m.diagnosticsModal == nil {
 		return m, nil

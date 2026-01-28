@@ -1154,9 +1154,10 @@ type MessageReloadMsg struct {
 func (m MessageReloadMsg) GetEpoch() uint64 { return m.Epoch }
 
 // TickCmd returns a command that triggers periodic refresh.
-func TickCmd() tea.Cmd {
+// Captures the current epoch so stale ticks from a previous project are discarded.
+func TickCmd(epoch uint64) tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-		return WatchEventMsg{}
+		return WatchEventMsg{Epoch: epoch}
 	})
 }
 
