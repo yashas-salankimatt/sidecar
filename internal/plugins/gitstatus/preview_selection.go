@@ -106,12 +106,12 @@ func (p *Plugin) autoLoadCommitPreview() tea.Cmd {
 }
 
 // autoLoadPreview loads the appropriate preview for the current cursor position.
-// When forceReload is true, clears dedup state so the load always fires
+// When forceReload is true, clears file diff dedup state so the load always fires
 // (use after operations that change the file list like stage/unstage/discard/commit).
+// Commit previews are not force-reloaded since commits are immutable.
 func (p *Plugin) autoLoadPreview(forceReload bool) tea.Cmd {
 	if forceReload {
 		p.selectedDiffFile = ""
-		p.previewCommit = nil
 	}
 	if p.cursorOnCommit() {
 		return p.autoLoadCommitPreview()

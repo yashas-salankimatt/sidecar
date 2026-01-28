@@ -483,10 +483,6 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		if p.cursor > maxCursor {
 			p.cursor = maxCursor
 		}
-		// Auto-load commit preview if cursor is on a commit after commits arrive
-		if p.viewMode == ViewModeStatus && p.cursorOnCommit() && p.previewCommit == nil {
-			return p, tea.Batch(p.ensureCommitListFilled(), p.autoLoadCommitPreview())
-		}
 		return p, p.ensureCommitListFilled()
 
 	case MoreCommitsLoadedMsg:
