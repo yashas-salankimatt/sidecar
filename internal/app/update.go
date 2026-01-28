@@ -1537,7 +1537,7 @@ func (m Model) handleQuitConfirmMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleProjectAddThemePickerKeys handles keys within the theme picker sub-modal.
-func (m Model) handleProjectAddThemePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleProjectAddThemePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.projectAddCommunityMode {
 		return m.handleProjectAddCommunityKeys(msg)
 	}
@@ -1583,6 +1583,7 @@ func (m Model) handleProjectAddThemePickerKeys(msg tea.KeyMsg) (tea.Model, tea.C
 		if m.projectAddThemeCursor >= 0 && m.projectAddThemeCursor < len(m.projectAddThemeFiltered) {
 			m.projectAddThemeSelected = m.projectAddThemeFiltered[m.projectAddThemeCursor]
 		}
+		m.projectAddModalWidth = 0 // Force modal rebuild to show new theme
 		m.resetProjectAddThemePicker()
 		// Restore theme
 		resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)
@@ -1614,7 +1615,7 @@ func (m Model) handleProjectAddThemePickerKeys(msg tea.KeyMsg) (tea.Model, tea.C
 }
 
 // handleProjectAddCommunityKeys handles keys in the community sub-browser within add-project.
-func (m Model) handleProjectAddCommunityKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleProjectAddCommunityKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	maxVisible := 6
 	switch msg.String() {
 	case "esc", "tab":
@@ -1649,6 +1650,7 @@ func (m Model) handleProjectAddCommunityKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		if m.projectAddCommunityCursor >= 0 && m.projectAddCommunityCursor < len(m.projectAddCommunityList) {
 			m.projectAddThemeSelected = m.projectAddCommunityList[m.projectAddCommunityCursor]
 		}
+		m.projectAddModalWidth = 0 // Force modal rebuild to show new theme
 		m.resetProjectAddThemePicker()
 		// Restore theme
 		resolved := theme.ResolveTheme(m.cfg, m.ui.WorkDir)

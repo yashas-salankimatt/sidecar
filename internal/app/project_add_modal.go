@@ -278,7 +278,7 @@ func (m *Model) renderProjectAddModal(content string) string {
 }
 
 // handleProjectAddModalKeys handles keyboard input for the project add modal.
-func (m Model) handleProjectAddModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleProjectAddModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// If theme picker is open, handle it separately
 	if m.projectAddThemeMode {
 		return m.handleProjectAddThemePickerKeys(msg)
@@ -313,7 +313,7 @@ func (m Model) handleProjectAddModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleProjectAddModalMouse handles mouse events for the project add modal.
-func (m Model) handleProjectAddModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleProjectAddModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// If theme picker is open, let it handle mouse
 	if m.projectAddThemeMode {
 		return m.handleProjectAddThemePickerMouse(msg)
