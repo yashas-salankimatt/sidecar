@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/marcus/sidecar/internal/app"
 	"github.com/marcus/sidecar/internal/plugins/gitstatus"
 )
 
@@ -501,8 +502,16 @@ func (p *Plugin) performDirectMerge(wt *Worktree) tea.Cmd {
 // If currently on the base branch, uses git pull --ff-only to safely update.
 // Otherwise uses git fetch + update-ref to update the branch without checkout.
 func (p *Plugin) pullAfterMerge(wt *Worktree, branch string, currentBranch string) tea.Cmd {
+	// Get main worktree path now, before potential worktree deletion.
+	// This is critical when sidecar is running inside the worktree being deleted -
+	// p.ctx.WorkDir would point to a directory that no longer exists after deletion.
+	mainPath := app.GetMainWorktreePath(p.ctx.WorkDir)
+	if mainPath == "" {
+		mainPath = p.ctx.WorkDir // fallback if not in worktree context
+	}
+
 	return func() tea.Msg {
-		workDir := p.ctx.WorkDir
+		workDir := mainPath
 
 		if currentBranch == branch {
 			// Currently on the base branch - use pull --ff-only for safety
