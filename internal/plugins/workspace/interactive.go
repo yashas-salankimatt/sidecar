@@ -67,7 +67,7 @@ const (
 	// scrollBurstDebounce is used during fast scrolling (burst mode).
 	// Lower = more responsive. Higher = better filtering but feels sluggish.
 	// 32ms ≈ 30fps, good balance of smooth scrolling and reduced event spam.
-	scrollBurstDebounce = 32 * time.Millisecond
+	scrollBurstDebounce = 12 * time.Millisecond
 
 	// scrollBurstThreshold is scroll events needed to enter burst mode.
 	// Lower = enter burst mode faster. Higher = more normal scrolling before burst kicks in.
