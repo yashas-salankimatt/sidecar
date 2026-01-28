@@ -390,9 +390,9 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		if p.cursor > maxCursor {
 			p.cursor = maxCursor
 		}
-		// Auto-load diff for first file if nothing selected
-		if p.selectedDiffFile == "" && p.viewMode == ViewModeStatus {
-			return p, p.autoLoadDiff()
+		// Auto-load preview for current cursor position after refresh
+		if p.viewMode == ViewModeStatus {
+			return p, p.autoLoadPreview(true)
 		}
 		return p, nil
 
@@ -482,6 +482,10 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		}
 		if p.cursor > maxCursor {
 			p.cursor = maxCursor
+		}
+		// Auto-load commit preview if cursor is on a commit after commits arrive
+		if p.viewMode == ViewModeStatus && p.cursorOnCommit() && p.previewCommit == nil {
+			return p, tea.Batch(p.ensureCommitListFilled(), p.autoLoadCommitPreview())
 		}
 		return p, p.ensureCommitListFilled()
 
