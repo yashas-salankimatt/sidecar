@@ -101,6 +101,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.handleCommunityBrowserMouse(msg)
 			}
 			return m.handleThemeSwitcherMouse(msg)
+		case ModalIssueInput:
+			return m.handleIssueInputMouse(msg)
+		case ModalIssuePreview:
+			return m.handleIssuePreviewMouse(msg)
 		}
 
 		// Handle header tab clicks (Y < 2 means header area)
@@ -362,6 +366,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 		return m, nil
+
+	case IssuePreviewResultMsg:
+		m.issuePreviewLoading = false
+		if msg.Error != nil {
+			m.issuePreviewError = msg.Error
+		} else {
+			m.issuePreviewData = msg.Data
+		}
+		// Clear modal cache to trigger rebuild
+		m.issuePreviewModal = nil
+		m.issuePreviewModalWidth = 0
+		return m, nil
 	}
 
 	// Forward other messages to ALL plugins (not just active)
@@ -440,6 +456,14 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.resetWorktreeSwitcher()
+			m.updateContext()
+			return m, nil
+		case ModalIssueInput:
+			m.resetIssueInput()
+			m.updateContext()
+			return m, nil
+		case ModalIssuePreview:
+			m.resetIssuePreview()
 			m.updateContext()
 			return m, nil
 		case ModalThemeSwitcher:
@@ -948,6 +972,89 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Handle issue input modal keys
+	if m.showIssueInput {
+		switch msg.Type {
+		case tea.KeyEnter:
+			issueID := strings.TrimSpace(m.issueInputInput.Value())
+			if issueID != "" {
+				m.resetIssueInput()
+				// Check if active plugin is TD monitor — go directly to rich modal
+				if p := m.ActivePlugin(); p != nil && p.ID() == "td-monitor" {
+					m.updateContext()
+					return m, tea.Batch(
+						func() tea.Msg { return OpenFullIssueMsg{IssueID: issueID} },
+					)
+				}
+				// Otherwise show lightweight preview (clear stale state)
+				m.showIssuePreview = true
+				m.issuePreviewLoading = true
+				m.issuePreviewData = nil
+				m.issuePreviewError = nil
+				m.issuePreviewModal = nil
+				m.issuePreviewModalWidth = 0
+				return m, fetchIssuePreviewCmd(issueID)
+			}
+			return m, nil
+		}
+
+		if isMouseEscapeSequence(msg) {
+			return m, nil
+		}
+
+		// Forward key to text input, then clear modal cache so it rebuilds
+		// in View() with a fresh pointer to this copy's issueInputInput.
+		// (The modal's inputSection stores a *textinput.Model; without clearing,
+		// the pointer becomes stale across bubbletea's value-copy Update cycles.)
+		var cmd tea.Cmd
+		m.issueInputInput, cmd = m.issueInputInput.Update(msg)
+		m.issueInputModal = nil
+		m.issueInputModalWidth = 0
+		return m, cmd
+	}
+
+	// Handle issue preview modal keys
+	if m.showIssuePreview {
+		m.ensureIssuePreviewModal()
+		if m.issuePreviewModal == nil {
+			return m, nil
+		}
+
+		// "o" shortcut to open in TD
+		if msg.String() == "o" && m.issuePreviewData != nil {
+			issueID := m.issuePreviewData.ID
+			m.resetIssuePreview()
+			m.updateContext()
+			return m, tea.Batch(
+				FocusPlugin("td-monitor"),
+				func() tea.Msg { return OpenFullIssueMsg{IssueID: issueID} },
+			)
+		}
+
+		action, cmd := m.issuePreviewModal.HandleKey(msg)
+		switch action {
+		case "open-in-td":
+			issueID := ""
+			if m.issuePreviewData != nil {
+				issueID = m.issuePreviewData.ID
+			}
+			m.resetIssuePreview()
+			m.updateContext()
+			if issueID != "" {
+				return m, tea.Batch(
+					FocusPlugin("td-monitor"),
+					func() tea.Msg { return OpenFullIssueMsg{IssueID: issueID} },
+				)
+			}
+			return m, nil
+		case "cancel":
+			m.resetIssuePreview()
+			m.updateContext()
+			return m, nil
+		}
+		return m, cmd
+	}
+
 	// If any modal is open, don't process plugin/toggle keys
 	if m.hasModal() {
 		return m, nil
@@ -1049,6 +1156,13 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateContext()
 		}
 		return m, nil
+	case "i":
+		if !m.hasModal() {
+			m.showIssueInput = true
+			m.activeContext = "issue-input"
+			m.initIssueInput()
+			return m, nil
+		}
 	case "ctrl+h":
 		m.showFooter = !m.showFooter
 		// Notify plugins of changed content area height
@@ -1953,5 +2067,53 @@ func (m *Model) handleCommunityBrowserMouse(msg tea.MouseMsg) (tea.Model, tea.Cm
 		m.communityBrowserHover = -1
 	}
 
+	return m, nil
+}
+
+// handleIssueInputMouse handles mouse events for the issue input modal.
+func (m *Model) handleIssueInputMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	m.ensureIssueInputModal()
+	if m.issueInputModal == nil {
+		return m, nil
+	}
+	if m.issueInputMouseHandler == nil {
+		m.issueInputMouseHandler = mouse.NewHandler()
+	}
+	action := m.issueInputModal.HandleMouse(msg, m.issueInputMouseHandler)
+	if action == "cancel" {
+		m.resetIssueInput()
+		m.updateContext()
+	}
+	return m, nil
+}
+
+// handleIssuePreviewMouse handles mouse events for the issue preview modal.
+func (m *Model) handleIssuePreviewMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	m.ensureIssuePreviewModal()
+	if m.issuePreviewModal == nil {
+		return m, nil
+	}
+	if m.issuePreviewMouseHandler == nil {
+		m.issuePreviewMouseHandler = mouse.NewHandler()
+	}
+	action := m.issuePreviewModal.HandleMouse(msg, m.issuePreviewMouseHandler)
+	switch action {
+	case "cancel":
+		m.resetIssuePreview()
+		m.updateContext()
+	case "open-in-td":
+		issueID := ""
+		if m.issuePreviewData != nil {
+			issueID = m.issuePreviewData.ID
+		}
+		m.resetIssuePreview()
+		m.updateContext()
+		if issueID != "" {
+			return m, tea.Batch(
+				FocusPlugin("td-monitor"),
+				func() tea.Msg { return OpenFullIssueMsg{IssueID: issueID} },
+			)
+		}
+	}
 	return m, nil
 }

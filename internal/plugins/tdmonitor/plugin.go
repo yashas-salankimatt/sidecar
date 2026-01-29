@@ -208,6 +208,26 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		)
 	}
 
+	// Handle issue preview "Open in TD" request
+	if fullMsg, ok := msg.(app.OpenFullIssueMsg); ok {
+		if p.model == nil {
+			return p, func() tea.Msg {
+				return app.ToastMsg{
+					Message:  "TD not initialized",
+					Duration: 2 * time.Second,
+					IsError:  true,
+				}
+			}
+		}
+		newModel, cmd := p.model.Update(monitor.OpenIssueByIDMsg{
+			IssueID: fullMsg.IssueID,
+		})
+		if m, ok := newModel.(monitor.Model); ok {
+			p.model = &m
+		}
+		return p, cmd
+	}
+
 	// Delegate to monitor
 	newModel, cmd := p.model.Update(msg)
 
