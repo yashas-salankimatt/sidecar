@@ -227,12 +227,12 @@ func (p *Plugin) renderOutputContent(width, height int) string {
 			Bold(true)
 		hint = interactiveStyle.Render("INTERACTIVE") + " " + dimText(p.getInteractiveExitKey()+" exit • "+p.getInteractiveAttachKey()+" attach")
 	} else {
-		// Only show "i for interactive" hint if feature flag is enabled
+		// Only show "E for interactive" hint if feature flag is enabled
 		prefix := getTmuxPrefix()
 		if features.IsEnabled(features.TmuxInteractiveInput.Name) {
-			hint = dimText(fmt.Sprintf("enter to attach • i for interactive • %s d to detach", prefix))
+			hint = dimText(fmt.Sprintf("t to attach • E for interactive • %s d to detach", prefix))
 		} else {
-			hint = dimText(fmt.Sprintf("enter to attach • %s d to detach", prefix))
+			hint = dimText(fmt.Sprintf("t to attach • %s d to detach", prefix))
 		}
 	}
 	height-- // Reserve line for hint
@@ -430,12 +430,12 @@ func (p *Plugin) renderShellOutput(width, height int) string {
 			Bold(true)
 		hint = interactiveStyle.Render("INTERACTIVE") + " " + dimText(p.getInteractiveExitKey()+" exit")
 	} else {
-		// Only show "i for interactive" hint if feature flag is enabled
+		// Only show "E for interactive" hint if feature flag is enabled
 		prefix := getTmuxPrefix()
 		if features.IsEnabled(features.TmuxInteractiveInput.Name) {
-			hint = dimText(fmt.Sprintf("enter to attach • i for interactive • %s d to detach", prefix))
+			hint = dimText(fmt.Sprintf("t to attach • E for interactive • %s d to detach", prefix))
 		} else {
-			hint = dimText(fmt.Sprintf("enter to attach • %s d to detach", prefix))
+			hint = dimText(fmt.Sprintf("t to attach • %s d to detach", prefix))
 		}
 	}
 	height-- // Reserve line for hint
