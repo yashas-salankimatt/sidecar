@@ -183,7 +183,7 @@ func (p UpdatePhase) StringForMethod(method string) string {
 		case "homebrew":
 			return "Upgrading via Homebrew"
 		case "binary":
-			return "Downloading binary"
+			return "Manual download required"
 		default:
 			return "Installing via go install"
 		}
