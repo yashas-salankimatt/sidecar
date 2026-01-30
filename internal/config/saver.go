@@ -91,7 +91,8 @@ func toSaveConfig(cfg *Config) saveConfig {
 	}
 }
 
-// Save writes the config to ~/.config/sidecar/config.json
+// Save writes the config to ~/.config/sidecar/config.json, preserving
+// any keys it doesn't manage (e.g. "prompts").
 func Save(cfg *Config) error {
 	path := ConfigPath()
 
@@ -100,8 +101,36 @@ func Save(cfg *Config) error {
 		return err
 	}
 
+	// Read existing file to preserve unknown keys
+	var raw map[string]json.RawMessage
+	if existing, err := os.ReadFile(path); err == nil {
+		if jsonErr := json.Unmarshal(existing, &raw); jsonErr != nil {
+			raw = make(map[string]json.RawMessage)
+		}
+	} else {
+		raw = make(map[string]json.RawMessage)
+	}
+
+	// Marshal each known field into the map
 	sc := toSaveConfig(cfg)
-	data, err := json.MarshalIndent(sc, "", "  ")
+	fields := map[string]interface{}{
+		"projects": sc.Projects,
+		"plugins":  sc.Plugins,
+		"keymap":   sc.Keymap,
+		"ui":       sc.UI,
+	}
+	if len(sc.Features.Flags) > 0 {
+		fields["features"] = sc.Features
+	}
+	for key, val := range fields {
+		b, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Errorf("marshal %s: %w", key, err)
+		}
+		raw[key] = b
+	}
+
+	data, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return err
 	}
