@@ -169,11 +169,24 @@ const (
 
 // String returns the display name for an update phase.
 func (p UpdatePhase) String() string {
+	return p.StringForMethod("")
+}
+
+// StringForMethod returns the display name for an update phase,
+// customized for the install method.
+func (p UpdatePhase) StringForMethod(method string) string {
 	switch p {
 	case PhaseCheckPrereqs:
 		return "Checking prerequisites"
 	case PhaseInstalling:
-		return "Installing"
+		switch method {
+		case "homebrew":
+			return "Upgrading via Homebrew"
+		case "binary":
+			return "Downloading binary"
+		default:
+			return "Installing via go install"
+		}
 	case PhaseVerifying:
 		return "Verifying"
 	default:

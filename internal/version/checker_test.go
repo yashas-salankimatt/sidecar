@@ -3,49 +3,56 @@ package version
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestUpdateCommand(t *testing.T) {
 	tests := []struct {
+		name     string
 		version  string
+		method   InstallMethod
 		contains []string
 	}{
 		{
+			name:     "go install",
 			version:  "v1.0.0",
+			method:   InstallMethodGo,
 			contains: []string{"go install", "v1.0.0", "github.com/marcus/sidecar"},
 		},
 		{
+			name:     "go install with ldflags",
 			version:  "v2.1.3",
+			method:   InstallMethodGo,
 			contains: []string{"-ldflags", "v2.1.3"},
+		},
+		{
+			name:     "homebrew",
+			version:  "v1.0.0",
+			method:   InstallMethodHomebrew,
+			contains: []string{"brew upgrade sidecar"},
+		},
+		{
+			name:     "binary download",
+			version:  "v1.0.0",
+			method:   InstallMethodBinary,
+			contains: []string{"https://github.com/marcus/sidecar/releases/tag/v1.0.0"},
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			cmd := updateCommand(tt.version)
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := updateCommand(tt.version, tt.method)
 			for _, want := range tt.contains {
-				if !contains(cmd, want) {
-					t.Errorf("updateCommand(%q) = %q, want to contain %q", tt.version, cmd, want)
+				if !strings.Contains(cmd, want) {
+					t.Errorf("updateCommand(%q, %q) = %q, want to contain %q", tt.version, tt.method, cmd, want)
 				}
 			}
 		})
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr))
-}
-
-func containsAt(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
 
 func TestCheck_DevelopmentVersion(t *testing.T) {
 	// Development versions should return empty result without making HTTP calls
@@ -187,25 +194,37 @@ func TestRelease(t *testing.T) {
 
 func TestTdUpdateCommand(t *testing.T) {
 	tests := []struct {
+		name     string
 		version  string
+		method   InstallMethod
 		contains []string
 	}{
 		{
+			name:     "go install",
 			version:  "v0.4.12",
+			method:   InstallMethodGo,
 			contains: []string{"go install", "v0.4.12", "github.com/marcus/td"},
 		},
 		{
+			name:     "go install v1",
 			version:  "v1.0.0",
+			method:   InstallMethodGo,
 			contains: []string{"go install", "v1.0.0", "marcus/td"},
+		},
+		{
+			name:     "homebrew",
+			version:  "v0.4.12",
+			method:   InstallMethodHomebrew,
+			contains: []string{"brew upgrade td"},
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			cmd := tdUpdateCommand(tt.version)
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := tdUpdateCommand(tt.version, tt.method)
 			for _, want := range tt.contains {
-				if !contains(cmd, want) {
-					t.Errorf("tdUpdateCommand(%q) = %q, want to contain %q", tt.version, cmd, want)
+				if !strings.Contains(cmd, want) {
+					t.Errorf("tdUpdateCommand(%q, %q) = %q, want to contain %q", tt.version, tt.method, cmd, want)
 				}
 			}
 		})

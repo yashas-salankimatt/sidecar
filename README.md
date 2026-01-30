@@ -2,7 +2,7 @@
 
 You might never open your editor again.
 
-**Status: Beta** - Generally working for most use cases.
+**Status: Ready for daily use.** Please [report any issues](https://github.com/marcus/sidecar/issues) you encounter.
 
 [Documentation](https://marcus.github.io/sidecar/) · [Getting Started](https://marcus.github.io/sidecar/docs/intro)
 

@@ -247,11 +247,14 @@ func (m *Model) handleDiagnosticsModalMouse(msg tea.MouseMsg) (tea.Model, tea.Cm
 	action := m.diagnosticsModal.HandleMouse(msg, m.diagnosticsMouseHandler)
 	switch action {
 	case "update":
-		if !m.updateInProgress && !m.needsRestart {
-			m.updateInProgress = true
-			m.updateError = ""
-			m.updateSpinnerFrame = 0
-			return m, tea.Batch(m.doUpdate(), updateSpinnerTick())
+		if m.hasUpdatesAvailable() && !m.updateInProgress && !m.needsRestart {
+			m.updateReleaseNotes = ""
+			if m.updateAvailable != nil {
+				m.updateReleaseNotes = m.updateAvailable.ReleaseNotes
+			}
+			m.updateModalState = UpdateModalPreview
+			m.showDiagnostics = false
+			return m, nil
 		}
 	}
 	return m, nil

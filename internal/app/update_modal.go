@@ -15,6 +15,7 @@ import (
 	"github.com/marcus/sidecar/internal/mouse"
 	"github.com/marcus/sidecar/internal/styles"
 	"github.com/marcus/sidecar/internal/ui"
+	"github.com/marcus/sidecar/internal/version"
 )
 
 const changelogURL = "https://raw.githubusercontent.com/marcus/sidecar/main/CHANGELOG.md"
@@ -109,6 +110,32 @@ func (m *Model) ensureUpdatePreviewModal() {
 
 	changelogHint := styles.Muted.Render("[c] View Full Changelog")
 
+	// Build method-specific install hint and buttons
+	var methodHint string
+	var buttons []modal.ButtonDef
+
+	switch m.updateInstallMethod {
+	case version.InstallMethodHomebrew:
+		methodHint = styles.Muted.Render("Method: brew upgrade sidecar")
+		buttons = []modal.ButtonDef{
+			modal.Btn(" Update Now ", "update"),
+			modal.Btn(" Later ", "cancel"),
+		}
+	case version.InstallMethodBinary:
+		downloadURL := fmt.Sprintf("https://github.com/marcus/sidecar/releases/tag/%s",
+			m.updateAvailable.LatestVersion)
+		methodHint = styles.Muted.Render("Download: " + downloadURL)
+		buttons = []modal.ButtonDef{
+			modal.Btn(" Close ", "cancel"),
+		}
+	default:
+		methodHint = styles.Muted.Render("Method: go install")
+		buttons = []modal.ButtonDef{
+			modal.Btn(" Update Now ", "update"),
+			modal.Btn(" Later ", "cancel"),
+		}
+	}
+
 	m.updatePreviewModal = modal.New("Sidecar Update",
 		modal.WithWidth(modalW),
 		modal.WithVariant(modal.VariantDefault),
@@ -122,10 +149,9 @@ func (m *Model) ensureUpdatePreviewModal() {
 		AddSection(modal.Spacer()).
 		AddSection(modal.Text(changelogHint)).
 		AddSection(modal.Spacer()).
-		AddSection(modal.Buttons(
-			modal.Btn(" Update Now ", "update"),
-			modal.Btn(" Later ", "cancel"),
-		))
+		AddSection(modal.Text(methodHint)).
+		AddSection(modal.Spacer()).
+		AddSection(modal.Buttons(buttons...))
 }
 
 // renderUpdatePreviewModal renders the preview state showing release notes before update.
@@ -232,6 +258,7 @@ func (m *Model) renderUpdateProgressModal() string {
 
 	// Phase indicators - 3 real, observable phases
 	phases := []UpdatePhase{PhaseCheckPrereqs, PhaseInstalling, PhaseVerifying}
+	methodStr := string(m.updateInstallMethod)
 	for _, phase := range phases {
 		status := m.updatePhaseStatus[phase]
 		icon := "○" // pending
@@ -249,7 +276,7 @@ func (m *Model) renderUpdateProgressModal() string {
 			color = styles.Error
 		}
 
-		phaseName := phase.String()
+		phaseName := phase.StringForMethod(methodStr)
 		if phase == m.updatePhase && status == "running" {
 			phaseName = lipgloss.NewStyle().Bold(true).Render(phaseName)
 		}

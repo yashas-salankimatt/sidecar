@@ -350,6 +350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case version.UpdateAvailableMsg:
 		m.updateAvailable = &msg
+		m.updateInstallMethod = msg.InstallMethod
 		m.ShowToast(
 			fmt.Sprintf("Update %s available! Press ! for details", msg.LatestVersion),
 			15*time.Second,

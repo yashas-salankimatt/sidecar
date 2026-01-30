@@ -16,6 +16,7 @@ type UpdateAvailableMsg struct {
 	UpdateCommand  string
 	ReleaseNotes   string
 	ReleaseURL     string
+	InstallMethod  InstallMethod
 }
 
 // TdVersionMsg is sent with td version info (installed or not).
@@ -26,24 +27,34 @@ type TdVersionMsg struct {
 	HasUpdate      bool
 }
 
-// updateCommand generates the go install command for updating.
-func updateCommand(version string) string {
-	return fmt.Sprintf(
-		"go install -ldflags \"-X main.Version=%s\" github.com/marcus/sidecar/cmd/sidecar@%s",
-		version, version,
-	)
+// updateCommand generates the update command based on install method.
+func updateCommand(version string, method InstallMethod) string {
+	switch method {
+	case InstallMethodHomebrew:
+		return "brew upgrade sidecar"
+	case InstallMethodBinary:
+		return fmt.Sprintf("https://github.com/marcus/sidecar/releases/tag/%s", version)
+	default:
+		return fmt.Sprintf(
+			"go install -ldflags \"-X main.Version=%s\" github.com/marcus/sidecar/cmd/sidecar@%s",
+			version, version,
+		)
+	}
 }
 
 // CheckAsync returns a Bubble Tea command that checks for updates in background.
 func CheckAsync(currentVersion string) tea.Cmd {
 	return func() tea.Msg {
+		method := DetectInstallMethod()
+
 		// Check cache first
 		if cached, err := LoadCache(); err == nil && IsCacheValid(cached, currentVersion) {
 			if cached.HasUpdate {
 				return UpdateAvailableMsg{
 					CurrentVersion: currentVersion,
 					LatestVersion:  cached.LatestVersion,
-					UpdateCommand:  updateCommand(cached.LatestVersion),
+					UpdateCommand:  updateCommand(cached.LatestVersion, method),
+					InstallMethod:  method,
 				}
 			}
 			return nil // up-to-date, cached
@@ -66,9 +77,10 @@ func CheckAsync(currentVersion string) tea.Cmd {
 			return UpdateAvailableMsg{
 				CurrentVersion: currentVersion,
 				LatestVersion:  result.LatestVersion,
-				UpdateCommand:  updateCommand(result.LatestVersion),
+				UpdateCommand:  updateCommand(result.LatestVersion, method),
 				ReleaseNotes:   result.ReleaseNotes,
 				ReleaseURL:     result.UpdateURL,
+				InstallMethod:  method,
 			}
 		}
 
@@ -79,6 +91,7 @@ func CheckAsync(currentVersion string) tea.Cmd {
 // ForceCheckAsync checks for updates, ignoring the cache.
 func ForceCheckAsync(currentVersion string) tea.Cmd {
 	return func() tea.Msg {
+		method := DetectInstallMethod()
 		result := Check(currentVersion)
 		if result.Error == nil {
 			_ = SaveCache(&CacheEntry{
@@ -92,21 +105,27 @@ func ForceCheckAsync(currentVersion string) tea.Cmd {
 			return UpdateAvailableMsg{
 				CurrentVersion: currentVersion,
 				LatestVersion:  result.LatestVersion,
-				UpdateCommand:  updateCommand(result.LatestVersion),
+				UpdateCommand:  updateCommand(result.LatestVersion, method),
 				ReleaseNotes:   result.ReleaseNotes,
 				ReleaseURL:     result.UpdateURL,
+				InstallMethod:  method,
 			}
 		}
 		return nil
 	}
 }
 
-// tdUpdateCommand generates the go install command for updating td.
-func tdUpdateCommand(version string) string {
-	return fmt.Sprintf(
-		"go install github.com/marcus/td@%s",
-		version,
-	)
+// tdUpdateCommand generates the update command for td based on install method.
+func tdUpdateCommand(version string, method InstallMethod) string {
+	switch method {
+	case InstallMethodHomebrew:
+		return "brew upgrade td"
+	default:
+		return fmt.Sprintf(
+			"go install github.com/marcus/td@%s",
+			version,
+		)
+	}
 }
 
 // GetTdVersion returns the installed td version by running `td version --short`.

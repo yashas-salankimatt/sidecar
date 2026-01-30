@@ -212,10 +212,11 @@ type Model struct {
 	tdVersionInfo   *version.TdVersionMsg
 
 	// Update feature state
-	updateInProgress   bool
-	updateError        string
-	needsRestart       bool
-	updateSpinnerFrame int
+	updateInProgress    bool
+	updateError         string
+	needsRestart        bool
+	updateSpinnerFrame  int
+	updateInstallMethod version.InstallMethod
 
 	// Update modal state
 	updateModalState      UpdateModalState
@@ -407,55 +408,6 @@ func (m *Model) hasUpdatesAvailable() bool {
 	return false
 }
 
-// doUpdate executes go install commands for available updates.
-func (m *Model) doUpdate() tea.Cmd {
-	sidecarUpdate := m.updateAvailable
-	tdUpdate := m.tdVersionInfo
-
-	return func() tea.Msg {
-		// Check Go is available
-		if _, err := exec.LookPath("go"); err != nil {
-			return UpdateErrorMsg{Step: "check", Err: fmt.Errorf("go not found in PATH")}
-		}
-
-		var sidecarUpdated, tdUpdated bool
-		var newSidecarVersion, newTdVersion string
-
-		// Update sidecar
-		if sidecarUpdate != nil {
-			args := []string{
-				"install",
-				"-ldflags", fmt.Sprintf("-X main.Version=%s", sidecarUpdate.LatestVersion),
-				fmt.Sprintf("github.com/marcus/sidecar/cmd/sidecar@%s", sidecarUpdate.LatestVersion),
-			}
-			cmd := exec.Command("go", args...)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				return UpdateErrorMsg{Step: "sidecar", Err: fmt.Errorf("%v: %s", err, output)}
-			}
-			sidecarUpdated = true
-			newSidecarVersion = sidecarUpdate.LatestVersion
-		}
-
-		// Update td
-		if tdUpdate != nil && tdUpdate.HasUpdate && tdUpdate.Installed {
-			cmd := exec.Command("go", "install",
-				fmt.Sprintf("github.com/marcus/td@%s", tdUpdate.LatestVersion))
-			if output, err := cmd.CombinedOutput(); err != nil {
-				return UpdateErrorMsg{Step: "td", Err: fmt.Errorf("%v: %s", err, output)}
-			}
-			tdUpdated = true
-			newTdVersion = tdUpdate.LatestVersion
-		}
-
-		return UpdateSuccessMsg{
-			SidecarUpdated:    sidecarUpdated,
-			TdUpdated:         tdUpdated,
-			NewSidecarVersion: newSidecarVersion,
-			NewTdVersion:      newTdVersion,
-		}
-	}
-}
-
 // initPhaseStatus initializes all update phases to pending status.
 func (m *Model) initPhaseStatus() {
 	m.updatePhaseStatus = map[UpdatePhase]string{
@@ -498,18 +450,29 @@ type UpdateInstallDoneMsg struct {
 
 // runCheckPrerequisites runs the prerequisites check phase.
 func (m *Model) runCheckPrerequisites() tea.Cmd {
+	method := m.updateInstallMethod
 	return func() tea.Msg {
-		if _, err := exec.LookPath("go"); err != nil {
-			return UpdateErrorMsg{Step: "check", Err: fmt.Errorf("go not found in PATH")}
+		switch method {
+		case version.InstallMethodHomebrew:
+			if _, err := exec.LookPath("brew"); err != nil {
+				return UpdateErrorMsg{Step: "check", Err: fmt.Errorf("brew not found in PATH")}
+			}
+		case version.InstallMethodBinary:
+			// No prerequisites for binary download — just show the URL
+		default:
+			if _, err := exec.LookPath("go"); err != nil {
+				return UpdateErrorMsg{Step: "check", Err: fmt.Errorf("go not found in PATH")}
+			}
 		}
 		return UpdatePrereqsPassedMsg{}
 	}
 }
 
-// runInstallPhase runs the install phase (go install commands).
+// runInstallPhase runs the install phase using the detected install method.
 func (m *Model) runInstallPhase() tea.Cmd {
 	sidecarUpdate := m.updateAvailable
 	tdUpdate := m.tdVersionInfo
+	method := m.updateInstallMethod
 
 	return func() tea.Msg {
 		var sidecarUpdated, tdUpdated bool
@@ -517,25 +480,46 @@ func (m *Model) runInstallPhase() tea.Cmd {
 
 		// Update sidecar
 		if sidecarUpdate != nil {
-			args := []string{
-				"install",
-				"-ldflags", fmt.Sprintf("-X main.Version=%s", sidecarUpdate.LatestVersion),
-				fmt.Sprintf("github.com/marcus/sidecar/cmd/sidecar@%s", sidecarUpdate.LatestVersion),
+			switch method {
+			case version.InstallMethodHomebrew:
+				cmd := exec.Command("brew", "upgrade", "sidecar")
+				if output, err := cmd.CombinedOutput(); err != nil {
+					return UpdateErrorMsg{Step: "sidecar", Err: fmt.Errorf("%v: %s", err, output)}
+				}
+				sidecarUpdated = true
+				newSidecarVersion = sidecarUpdate.LatestVersion
+			case version.InstallMethodBinary:
+				// Binary installs cannot be auto-updated; the preview modal
+				// shows the download URL instead. The user must download manually.
+			default: // Go install
+				args := []string{
+					"install",
+					"-ldflags", fmt.Sprintf("-X main.Version=%s", sidecarUpdate.LatestVersion),
+					fmt.Sprintf("github.com/marcus/sidecar/cmd/sidecar@%s", sidecarUpdate.LatestVersion),
+				}
+				cmd := exec.Command("go", args...)
+				if output, err := cmd.CombinedOutput(); err != nil {
+					return UpdateErrorMsg{Step: "sidecar", Err: fmt.Errorf("%v: %s", err, output)}
+				}
+				sidecarUpdated = true
+				newSidecarVersion = sidecarUpdate.LatestVersion
 			}
-			cmd := exec.Command("go", args...)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				return UpdateErrorMsg{Step: "sidecar", Err: fmt.Errorf("%v: %s", err, output)}
-			}
-			sidecarUpdated = true
-			newSidecarVersion = sidecarUpdate.LatestVersion
 		}
 
 		// Update td
 		if tdUpdate != nil && tdUpdate.HasUpdate && tdUpdate.Installed {
-			cmd := exec.Command("go", "install",
-				fmt.Sprintf("github.com/marcus/td@%s", tdUpdate.LatestVersion))
-			if output, err := cmd.CombinedOutput(); err != nil {
-				return UpdateErrorMsg{Step: "td", Err: fmt.Errorf("%v: %s", err, output)}
+			switch method {
+			case version.InstallMethodHomebrew:
+				cmd := exec.Command("brew", "upgrade", "td")
+				if output, err := cmd.CombinedOutput(); err != nil {
+					return UpdateErrorMsg{Step: "td", Err: fmt.Errorf("%v: %s", err, output)}
+				}
+			default: // Go install (binary users of td still use go install)
+				cmd := exec.Command("go", "install",
+					fmt.Sprintf("github.com/marcus/td@%s", tdUpdate.LatestVersion))
+				if output, err := cmd.CombinedOutput(); err != nil {
+					return UpdateErrorMsg{Step: "td", Err: fmt.Errorf("%v: %s", err, output)}
+				}
 			}
 			tdUpdated = true
 			newTdVersion = tdUpdate.LatestVersion
