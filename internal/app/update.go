@@ -2,10 +2,13 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -321,7 +324,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		args = append(args, msg.Path)
 		c := exec.Command(msg.Editor, args...)
+		termState, _ := term.GetState(int(os.Stdout.Fd()))
 		return m, tea.ExecProcess(c, func(err error) tea.Msg {
+			if termState != nil {
+				term.Restore(int(os.Stdout.Fd()), termState)
+			}
 			return EditorReturnedMsg{Err: err}
 		})
 
