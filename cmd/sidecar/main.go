@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"golang.org/x/term"
 	"github.com/marcus/sidecar/internal/adapter"
 	_ "github.com/marcus/sidecar/internal/adapter/claudecode"
 	_ "github.com/marcus/sidecar/internal/adapter/codex"
@@ -168,6 +169,13 @@ func main() {
 	currentVersion := effectiveVersion(Version)
 	initialPluginID := state.GetActivePlugin(workDir)
 	model := app.New(registry, km, cfg, currentVersion, workDir, initialPluginID)
+
+
+	// Guard against non-interactive terminal (e.g. piped stdout)
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		fmt.Fprintln(os.Stderr, "sidecar requires an interactive terminal")
+		os.Exit(1)
+	}
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
 
 	if _, err := p.Run(); err != nil {
