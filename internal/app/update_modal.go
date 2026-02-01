@@ -72,7 +72,7 @@ func (m *Model) renderUpdateModalOverlay(background string) string {
 
 // ensureUpdatePreviewModal creates/updates the preview modal with caching.
 func (m *Model) ensureUpdatePreviewModal() {
-	if m.updateAvailable == nil {
+	if m.updateAvailable == nil && (m.tdVersionInfo == nil || !m.tdVersionInfo.HasUpdate) {
 		return
 	}
 	modalW := m.updateModalWidth()
@@ -82,6 +82,36 @@ func (m *Model) ensureUpdatePreviewModal() {
 	m.updatePreviewModalWidth = modalW
 	contentW := modalW - 6 // borders + padding
 
+	// TD-only update: build a simpler modal
+	if m.updateAvailable == nil {
+		arrow := lipgloss.NewStyle().Foreground(styles.Success).Render(" → ")
+		versionLine := fmt.Sprintf("%s%s%s", m.tdVersionInfo.CurrentVersion, arrow, m.tdVersionInfo.LatestVersion)
+
+		var methodHint string
+		switch m.updateInstallMethod {
+		case version.InstallMethodHomebrew:
+			methodHint = styles.Muted.Render("Method: brew upgrade td")
+		default:
+			methodHint = styles.Muted.Render("Method: go install")
+		}
+
+		m.updatePreviewModal = modal.New("td Update",
+			modal.WithWidth(modalW),
+			modal.WithVariant(modal.VariantDefault),
+			modal.WithPrimaryAction("update"),
+		).
+			AddSection(modal.Text(versionLine)).
+			AddSection(modal.Spacer()).
+			AddSection(modal.Text(methodHint)).
+			AddSection(modal.Spacer()).
+			AddSection(modal.Buttons(
+				modal.Btn(" Update Now ", "update"),
+				modal.Btn(" Later ", "cancel"),
+			))
+		return
+	}
+
+	// Sidecar update (possibly with td update bundled)
 	// Version line
 	currentV := m.updateAvailable.CurrentVersion
 	latestV := m.updateAvailable.LatestVersion
