@@ -443,9 +443,13 @@ func (p *Plugin) enterInteractiveMode() tea.Cmd {
 	}
 	if target != "" {
 		previewWidth, previewHeight := p.calculatePreviewDimensions()
+		tty.SetWindowSizeManual(sessionName)
 		p.resizeTmuxPane(target, previewWidth, previewHeight)
+		// Verify and retry once if resize didn't take effect
+		if w, h, ok := queryPaneSize(target); ok && (w != previewWidth || h != previewHeight) {
+			p.resizeTmuxPane(target, previewWidth, previewHeight)
+		}
 	}
-
 	// Initialize interactive state
 	p.interactiveState = &InteractiveState{
 		Active:        true,
