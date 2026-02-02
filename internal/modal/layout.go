@@ -98,6 +98,21 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 		needsScrollbar = actualContentHeight > maxViewportHeight
 	}
 
+	// Cache absolute Y positions of focusable elements for scroll-to-focus
+	m.focusPositions = make(map[string]focusablePos, len(focusIDs))
+	{
+		sectionY := 0
+		for _, r := range visible {
+			for _, f := range r.focusables {
+				m.focusPositions[f.ID] = focusablePos{
+					y:      sectionY + f.OffsetY,
+					height: f.Height,
+				}
+			}
+			sectionY += r.height
+		}
+	}
+
 	// 3. Join full content with newlines between non-empty sections
 	var parts []string
 	for _, r := range visible {
@@ -112,6 +127,7 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 		viewportHeight = max(1, actualContentHeight)
 		padToHeight = false
 	}
+	m.lastViewportH = viewportHeight
 
 	// Clamp scroll offset
 	maxScroll := max(0, actualContentHeight-viewportHeight)

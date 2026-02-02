@@ -21,6 +21,16 @@ type Modal struct {
 	hoverID      string   // Currently hovered element ID
 	focusIDs     []string // Ordered list of focusable IDs (built during Render)
 	scrollOffset int      // Content scroll position in lines
+
+	// Focus-scroll tracking (cached during buildLayout)
+	focusPositions map[string]focusablePos // Absolute Y positions of focusable elements
+	lastViewportH  int                     // Viewport height from last render
+}
+
+// focusablePos records the absolute position of a focusable element within the full content.
+type focusablePos struct {
+	y      int // Line offset from top of full content
+	height int // Height in lines
 }
 
 // New creates a new Modal with the given title and options.
@@ -206,6 +216,27 @@ func (m *Modal) cycleFocus(delta int) {
 		return
 	}
 	m.focusIdx = (m.focusIdx + delta + len(m.focusIDs)) % len(m.focusIDs)
+	m.scrollToFocused()
+}
+
+// scrollToFocused adjusts scrollOffset so the focused element is visible in the viewport.
+func (m *Modal) scrollToFocused() {
+	id := m.currentFocusID()
+	if id == "" || m.focusPositions == nil || m.lastViewportH <= 0 {
+		return
+	}
+	pos, ok := m.focusPositions[id]
+	if !ok {
+		return
+	}
+	// If focused element is above the viewport, scroll up to it
+	if pos.y < m.scrollOffset {
+		m.scrollOffset = pos.y
+	}
+	// If focused element extends below the viewport, scroll down
+	if pos.y+pos.height > m.scrollOffset+m.lastViewportH {
+		m.scrollOffset = pos.y + pos.height - m.lastViewportH
+	}
 }
 
 // routeToFocusedSection routes a key message to the focused section.
