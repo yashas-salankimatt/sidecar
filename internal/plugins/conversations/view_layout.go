@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/sidecar/internal/adapter"
 	"github.com/marcus/sidecar/internal/styles"
+	"github.com/marcus/sidecar/internal/ui"
 )
 // renderTwoPane renders the two-pane layout with sessions on the left and messages on the right.
 func (p *Plugin) renderTwoPane() string {
@@ -349,9 +350,17 @@ func (p *Plugin) renderSidebarPane(height int) string {
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
+
+	// Reserve 1 column for scrollbar
+	sessionWidth := contentWidth - 1
+	if sessionWidth < 15 {
+		sessionWidth = 15
+	}
+
+	var sessionSB strings.Builder
 	if !p.searchMode {
 		groups := GroupSessionsByTime(sessions)
-		p.renderGroupedCompactSessions(&sb, groups, contentHeight, contentWidth)
+		p.renderGroupedCompactSessions(&sessionSB, groups, contentHeight, sessionWidth)
 	} else {
 		end := p.scrollOff + contentHeight
 		if end > len(sessions) {
@@ -361,10 +370,22 @@ func (p *Plugin) renderSidebarPane(height int) string {
 		for i := p.scrollOff; i < end; i++ {
 			session := sessions[i]
 			selected := i == p.cursor
-			sb.WriteString(p.renderCompactSessionRow(session, selected, contentWidth))
-			sb.WriteString("\n")
+			sessionSB.WriteString(p.renderCompactSessionRow(session, selected, sessionWidth))
+			sessionSB.WriteString("\n")
 		}
 	}
+
+	sessionContent := strings.TrimRight(sessionSB.String(), "\n")
+
+	// Render scrollbar
+	scrollbar := ui.RenderScrollbar(ui.ScrollbarParams{
+		TotalItems:   len(sessions),
+		ScrollOffset: p.scrollOff,
+		VisibleItems: contentHeight,
+		TrackHeight:  contentHeight,
+	})
+
+	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, sessionContent, scrollbar))
 
 	return sb.String()
 }
