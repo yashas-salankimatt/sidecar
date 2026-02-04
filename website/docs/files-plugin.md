@@ -132,8 +132,8 @@ Complete file management without leaving the terminal. All operations include sa
 
 | Key | Action |
 |-----|--------|
-| `n` | Create new file |
-| `N` | Create new directory |
+| `a` | Create new file |
+| `A` | Create new directory |
 
 Type the path (supports nested paths like `src/components/Button.tsx`). Missing parent directories are created automatically with confirmation.
 
@@ -236,7 +236,7 @@ Reveal opens the system file manager with the file selected (macOS Finder, Windo
 | `l` or `→` or `enter` | Expand directory or preview file |
 | `h` or `←` | Collapse directory or go to parent |
 | `/` | Filter tree by filename |
-| `n` / `N` | Create new file/directory |
+| `a` / `A` | Create new file/directory |
 | `r` / `m` | Rename/move file |
 | `D` | Delete (with confirmation) |
 | `y` / `p` | Yank/paste file |
