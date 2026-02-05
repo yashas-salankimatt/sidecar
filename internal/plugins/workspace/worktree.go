@@ -115,7 +115,41 @@ func (p *Plugin) listWorktrees() ([]*Worktree, error) {
 		mainRepoPath = p.ctx.WorkDir // Fallback if detection fails
 	}
 
-	return parseWorktreeList(string(output), mainRepoPath)
+	worktrees, err := parseWorktreeList(string(output), mainRepoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Detect missing worktrees and auto-prune fully-gone ones
+	needsPrune := false
+	filtered := make([]*Worktree, 0, len(worktrees))
+	for _, wt := range worktrees {
+		if wt.IsMain {
+			filtered = append(filtered, wt)
+			continue
+		}
+
+		if _, statErr := os.Stat(wt.Path); os.IsNotExist(statErr) {
+			wt.IsMissing = true
+		}
+
+		if wt.IsMissing {
+			// If branch is also gone, auto-prune and exclude from list
+			if !branchExists(p.ctx.WorkDir, wt.Branch) {
+				needsPrune = true
+				continue // exclude from returned list
+			}
+			// Branch still exists but folder gone — keep with IsMissing=true
+		}
+
+		filtered = append(filtered, wt)
+	}
+
+	if needsPrune {
+		_ = doWorktreePrune(p.ctx.WorkDir)
+	}
+
+	return filtered, nil
 }
 
 // parseWorktreeList parses porcelain format output.
@@ -168,6 +202,8 @@ func parseWorktreeList(output, mainWorkdir string) ([]*Worktree, error) {
 				// Bare worktree
 			} else if line == "detached" {
 				current.Branch = "(detached)"
+			} else if strings.HasPrefix(line, "prunable ") {
+				current.IsMissing = true
 			}
 		}
 	}
@@ -307,8 +343,13 @@ func (p *Plugin) doCreateWorktree(name, baseBranch, taskID, taskTitle string, ag
 	return wt, nil
 }
 
-// doDeleteWorktree removes a worktree.
-func doDeleteWorktree(workDir, path string) error {
+// doDeleteWorktree removes a worktree. When isMissing is true, uses prune
+// instead of remove since the directory no longer exists on disk.
+func doDeleteWorktree(workDir, path string, isMissing bool) error {
+	if isMissing {
+		return doWorktreePrune(workDir)
+	}
+
 	// First try without force
 	cmd := exec.Command("git", "worktree", "remove", path)
 	cmd.Dir = workDir
@@ -380,6 +421,23 @@ func checkRemoteBranchExists(workdir, branch string) bool {
 		return false
 	}
 	return len(strings.TrimSpace(string(output))) > 0
+}
+
+// branchExists checks if a local branch exists using git rev-parse.
+func branchExists(workdir, branch string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/"+branch)
+	cmd.Dir = workdir
+	return cmd.Run() == nil
+}
+
+// doWorktreePrune runs git worktree prune to clean up stale worktree references.
+func doWorktreePrune(workDir string) error {
+	cmd := exec.Command("git", "worktree", "prune")
+	cmd.Dir = workDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git worktree prune: %s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return nil
 }
 
 // isMainBranch returns true if the given branch is the repository's primary branch

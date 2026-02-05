@@ -346,6 +346,7 @@ func (p *Plugin) executeDelete() tea.Cmd {
 	name := wt.Name
 	path := wt.Path
 	branch := wt.Branch
+	isMissing := wt.IsMissing
 	deleteLocal := p.deleteLocalBranchOpt
 	deleteRemote := p.deleteRemoteBranchOpt && p.deleteHasRemote
 	workDir := p.ctx.WorkDir
@@ -372,7 +373,7 @@ func (p *Plugin) executeDelete() tea.Cmd {
 		var warnings []string
 
 		// Delete the worktree first
-		err := doDeleteWorktree(workDir, path)
+		err := doDeleteWorktree(workDir, path, isMissing)
 		if err != nil {
 			return DeleteDoneMsg{Name: name, Err: err}
 		}

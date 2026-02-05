@@ -745,7 +745,7 @@ func (p *Plugin) cleanupAfterMerge(wt *Worktree) tea.Cmd {
 		globalPaneCache.remove(sessionName)
 
 		// Remove worktree
-		if err := doDeleteWorktree(p.ctx.WorkDir, path); err != nil {
+		if err := doDeleteWorktree(p.ctx.WorkDir, path, false); err != nil {
 			return MergeStepCompleteMsg{
 				WorkspaceName: name,
 				Step:         MergeStepCleanup,
@@ -831,7 +831,7 @@ func (p *Plugin) performSelectedCleanup(wt *Worktree, state *MergeWorkflowState)
 
 		// Delete local worktree if selected
 		if state.DeleteLocalWorktree {
-			if err := doDeleteWorktree(p.ctx.WorkDir, path); err != nil {
+			if err := doDeleteWorktree(p.ctx.WorkDir, path, false); err != nil {
 				results.Errors = append(results.Errors, fmt.Sprintf("Workspace: %v", err))
 			} else {
 				results.LocalWorktreeDeleted = true
