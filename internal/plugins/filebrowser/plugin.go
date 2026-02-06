@@ -896,3 +896,15 @@ func (p *Plugin) FocusContext() string {
 	}
 	return "file-browser-tree"
 }
+
+// ConsumesTextInput reports whether the file browser currently expects typed
+// text input and should suppress app-level shortcut interception.
+func (p *Plugin) ConsumesTextInput() bool {
+	return p.searchMode ||
+		p.contentSearchMode ||
+		p.quickOpenMode ||
+		p.projectSearchMode ||
+		p.fileOpMode != FileOpNone ||
+		p.lineJumpMode ||
+		p.inlineEditMode
+}

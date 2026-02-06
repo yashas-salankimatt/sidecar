@@ -18,6 +18,13 @@ type Plugin interface {
 	FocusContext() string
 }
 
+// TextInputConsumer is an optional capability for plugins that need
+// alphanumeric key input to be forwarded as typed text instead of being
+// intercepted by app-level shortcuts.
+type TextInputConsumer interface {
+	ConsumesTextInput() bool
+}
+
 // Category represents a logical grouping of commands for the command palette.
 type Category string
 

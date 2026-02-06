@@ -271,3 +271,21 @@ func (p *Plugin) FocusContext() string {
 		return "workspace-list"
 	}
 }
+
+// ConsumesTextInput reports whether the workspace plugin is currently in a
+// mode that expects typed text input.
+func (p *Plugin) ConsumesTextInput() bool {
+	switch p.viewMode {
+	case ViewModeInteractive,
+		ViewModeCreate,
+		ViewModeTaskLink,
+		ViewModeCommitForMerge,
+		ViewModePromptPicker,
+		ViewModeRenameShell,
+		ViewModeTypeSelector,
+		ViewModeFetchPR:
+		return true
+	default:
+		return false
+	}
+}

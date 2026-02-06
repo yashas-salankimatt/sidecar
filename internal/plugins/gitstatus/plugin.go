@@ -951,6 +951,12 @@ func (p *Plugin) FocusContext() string {
 	}
 }
 
+// ConsumesTextInput reports whether the plugin is currently in a mode where
+// printable keys should be treated as text input.
+func (p *Plugin) ConsumesTextInput() bool {
+	return p.viewMode == ViewModeCommit || p.historySearchMode || p.pathFilterMode
+}
+
 // Diagnostics returns plugin health info.
 func (p *Plugin) Diagnostics() []plugin.Diagnostic {
 	status := "ok"

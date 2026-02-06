@@ -1152,6 +1152,12 @@ func (p *Plugin) FocusContext() string {
 	}
 }
 
+// ConsumesTextInput reports whether conversation UI currently has a focused
+// text-entry flow where app shortcuts should not intercept characters.
+func (p *Plugin) ConsumesTextInput() bool {
+	return p.searchMode || p.filterMode || p.contentSearchMode
+}
+
 // Diagnostics returns plugin health info.
 func (p *Plugin) Diagnostics() []plugin.Diagnostic {
 	status := "ok"

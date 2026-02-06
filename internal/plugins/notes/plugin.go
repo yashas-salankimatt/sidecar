@@ -1637,6 +1637,15 @@ func (p *Plugin) FocusContext() string {
 	return "notes-list"
 }
 
+// ConsumesTextInput reports whether notes currently has an active text-entry
+// surface and should receive printable keys directly.
+func (p *Plugin) ConsumesTextInput() bool {
+	if p.searchMode || p.showTaskModal || p.inlineEditMode {
+		return true
+	}
+	return p.activePane == PaneEditor && p.editorNote != nil && !p.previewMode
+}
+
 // loadNotes returns a command that loads notes from the store.
 func (p *Plugin) loadNotes() tea.Cmd {
 	if p.store == nil {

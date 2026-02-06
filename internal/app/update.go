@@ -551,9 +551,9 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Text input contexts: forward all keys to plugin except ctrl+c
-	// This ensures typing works correctly in commit messages, search boxes, etc.
-	if isTextInputContext(m.activeContext) {
+	// Text input contexts: forward all keys to plugin except ctrl+c.
+	// Uses plugin runtime capability first, then app-level fallback contexts.
+	if m.consumesTextInput() {
 		// ctrl+c shows quit confirmation
 		if msg.String() == "ctrl+c" {
 			if !m.hasModal() {
@@ -1156,20 +1156,20 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "`":
 		// Backtick cycles to next plugin (except in text input contexts)
-		if isTextInputContext(m.activeContext) {
+		if m.consumesTextInput() {
 			break
 		}
 		return m, m.NextPlugin()
 	case "~":
 		// Tilde cycles to previous plugin (except in text input contexts)
-		if isTextInputContext(m.activeContext) {
+		if m.consumesTextInput() {
 			break
 		}
 		return m, m.PrevPlugin()
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		// Number keys for direct plugin switching
 		// Block in text input contexts (user is typing numbers)
-		if isTextInputContext(m.activeContext) {
+		if m.consumesTextInput() {
 			break
 		}
 		idx := int(msg.Runes[0] - '1')
@@ -1311,6 +1311,17 @@ func (m *Model) updateContext() {
 	}
 }
 
+// consumesTextInput returns true when the active context should treat printable
+// keys as text input (block app-level navigation shortcuts).
+func (m *Model) consumesTextInput() bool {
+	if p := m.ActivePlugin(); p != nil {
+		if c, ok := p.(plugin.TextInputConsumer); ok && c.ConsumesTextInput() {
+			return true
+		}
+	}
+	return isTextInputContext(m.activeContext)
+}
+
 // isRootContext returns true if the context is a root view where 'q' should quit.
 // Root contexts are plugin top-level views (not sub-views like detail/diff/commit).
 func isRootContext(ctx string) bool {
@@ -1339,21 +1350,9 @@ func isRootContext(ctx string) bool {
 // where alphanumeric keys should be forwarded to the plugin for typing.
 func isTextInputContext(ctx string) bool {
 	switch ctx {
-	case "git-commit",
-		"git-history-search", "git-path-filter",
-		"conversations-search", "conversations-filter", "conversations-content-search",
-		"file-browser-search", "file-browser-content-search",
-		"file-browser-quick-open", "file-browser-file-op",
-		"file-browser-project-search",
-		"file-browser-line-jump",
-		"td-search", "td-form", "td-board-editor", "td-confirm", "td-close-confirm",
-		"workspace-create", "workspace-task-link", "workspace-rename-shell",
-		"workspace-prompt-picker", "workspace-commit-for-merge", "workspace-type-selector",
-		"workspace-fetch-pr",
+	case "td-search", "td-form", "td-board-editor", "td-confirm", "td-close-confirm",
 		"theme-switcher",
-		"notes-search",
-		"notes-editor",
-		"notes-task-modal":
+		"issue-input":
 		return true
 	default:
 		return false

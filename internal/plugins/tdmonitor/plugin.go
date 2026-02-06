@@ -370,6 +370,19 @@ func (p *Plugin) FocusContext() string {
 	return p.model.CurrentContextString()
 }
 
+// ConsumesTextInput reports whether TD monitor is in a text-entry context.
+func (p *Plugin) ConsumesTextInput() bool {
+	if p.model == nil {
+		return false
+	}
+	switch p.model.CurrentContextString() {
+	case "td-search", "td-form", "td-board-editor", "td-confirm", "td-close-confirm":
+		return true
+	default:
+		return false
+	}
+}
+
 // Diagnostics returns plugin health info.
 func (p *Plugin) Diagnostics() []plugin.Diagnostic {
 	status := "ok"

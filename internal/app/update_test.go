@@ -88,34 +88,28 @@ func TestIsTextInputContext(t *testing.T) {
 		context string
 		want    bool
 	}{
-		// Text input contexts - block `, ~, 1-4 for typing
-		{"git-commit", true},
-		{"git-history-search", true},
-		{"git-path-filter", true},
-		{"conversations-search", true},
-		{"conversations-filter", true},
-		{"conversations-content-search", true},
-		{"file-browser-search", true},
-		{"file-browser-content-search", true},
-		{"file-browser-quick-open", true},
-		{"file-browser-file-op", true},
-		{"file-browser-project-search", true},
+		// App/fallback text-input contexts.
+		// Plugin contexts are now detected via plugin.TextInputConsumer.
 		{"td-search", true},
 		{"td-form", true},
 		{"td-board-editor", true},
 		{"td-confirm", true},
-		{"workspace-create", true},
-		{"workspace-task-link", true},
-		{"workspace-rename-shell", true},
-		{"workspace-prompt-picker", true},
-		{"workspace-commit-for-merge", true},
-		{"workspace-type-selector", true},
-		{"file-browser-line-jump", true},
+		{"td-close-confirm", true},
 		{"theme-switcher", true},
+		{"issue-input", true},
 
-		// Non-text-input contexts - allow `, ~, 1-4 for navigation
+		// Non-text-input fallback contexts.
 		{"global", false},
 		{"", false},
+		{"git-commit", false},
+		{"git-history-search", false},
+		{"git-path-filter", false},
+		{"conversations-search", false},
+		{"conversations-filter", false},
+		{"conversations-content-search", false},
+		{"file-browser-search", false},
+		{"file-browser-content-search", false},
+		{"workspace-create", false},
 		{"git-status", false},
 		{"git-diff", false},
 		{"conversations", false},
