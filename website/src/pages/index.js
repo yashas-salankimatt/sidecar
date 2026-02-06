@@ -1350,6 +1350,12 @@ export default function Home() {
                 </div>
                 <p>Task management for AI-assisted development.</p>
               </a>
+              <a href="https://nightshift.haplab.com/" className="sc-sisterCard sc-sisterCardAmber">
+                <div className="sc-sisterLogoWrapper">
+                  <img src={useBaseUrl('/img/nightshift-logo.png')} alt="Nightshift" className="sc-sisterLogo" />
+                </div>
+                <p>It finds what you forgot to look for.</p>
+              </a>
             </div>
           </div>
         </section>

@@ -2310,10 +2310,17 @@ html[data-theme='dark'] .table-of-contents__link:hover {
 
 .sc-sisterGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1.5rem;
-  max-width: 1000px;
+  max-width: 1100px;
   margin: 0 auto;
+}
+
+@media (max-width: 996px) {
+  .sc-sisterGrid {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 600px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -2367,6 +2374,16 @@ html[data-theme='dark'] .table-of-contents__link:hover {
 .sc-sisterCardPurple:hover {
   border-color: rgba(216, 180, 254, 0.6);
   box-shadow: 0 8px 32px rgba(216, 180, 254, 0.2);
+}
+
+.sc-sisterCardAmber {
+  background: linear-gradient(135deg, rgba(232, 168, 73, 0.15) 0%, rgba(232, 168, 73, 0.05) 100%);
+  border-color: rgba(232, 168, 73, 0.3);
+}
+
+.sc-sisterCardAmber:hover {
+  border-color: rgba(232, 168, 73, 0.6);
+  box-shadow: 0 8px 32px rgba(232, 168, 73, 0.2);
 }
 
 .sc-sisterCardCurrent {
