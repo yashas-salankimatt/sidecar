@@ -421,29 +421,29 @@ renderHintLineTruncated(hints, availableWidth)
 
 ### Text input contexts (critical for modals with inputs)
 
-When a plugin view contains a text input (commit message, search box, modal with text field), the plugin's `FocusContext()` must return a context registered in `isTextInputContext()` (`internal/app/update.go`). Without this, the app intercepts character keys (like `i`, `r`, `q`) for global shortcuts instead of forwarding them to the plugin for typing.
+When a plugin view contains a text input (commit message, search box, modal with text field), implement `plugin.TextInputConsumer` and return `true` while text entry is active. This prevents app-level shortcuts from intercepting typed characters.
 
-**To add a text input context:**
-1. Return a unique context string from `FocusContext()` when the text input is active.
-2. Add that context to `isTextInputContext()` in `internal/app/update.go`.
+**To add text input handling in a plugin:**
+1. Keep `FocusContext()` for footer hints and key context.
+2. Implement `ConsumesTextInput() bool` and return `true` for active text-entry modes.
 
 ```go
 // Plugin side
 func (p *Plugin) FocusContext() string {
     if p.showMyModal {
-        return "my-plugin-input"  // Text input active
+        return "my-plugin-input" // Footer/context only
     }
     return "my-plugin"
 }
+
+func (p *Plugin) ConsumesTextInput() bool {
+    return p.showMyModal
+}
 ```
 
-```go
-// isTextInputContext in internal/app/update.go
-case "my-plugin-input":
-    return true
-```
+`isTextInputContext()` in `internal/app/update.go` is now fallback/app-owned. Use it for app-level contexts that are not driven by a plugin (or as compatibility fallback), not as the primary path for plugin input modes.
 
-The app forwards all keys (except `ctrl+c`) to the plugin in text input contexts, bypassing global shortcuts like `i` (open issue), `r` (refresh), backtick (next plugin), etc.
+The app forwards all keys (except `ctrl+c`) to the active plugin while text input is consumed, bypassing global shortcuts like `i` (open issue), `r` (refresh), backtick (next plugin), etc.
 
 ### Common mistakes
 | Symptom | Fix |
@@ -456,7 +456,7 @@ The app forwards all keys (except `ctrl+c`) to the plugin in text input contexts
 ### Core files
 | File | Purpose |
 |------|---------|
-| `internal/plugin/plugin.go` | `Command` struct, `Commands()`, `FocusContext()` interface |
+| `internal/plugin/plugin.go` | `Command` struct, `Commands()`, `FocusContext()`, `TextInputConsumer` |
 | `internal/keymap/bindings.go` | Default key→command mappings |
 | `internal/keymap/registry.go` | Runtime binding lookup, handler registration |
 | `internal/app/update.go` | Key routing, `isRootContext()` |
