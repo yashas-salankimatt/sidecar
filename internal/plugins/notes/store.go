@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -453,17 +454,7 @@ func (s *Store) NotePath(id string) string {
 
 // splitFirst splits a string on the first occurrence of sep.
 func splitFirst(s, sep string) []string {
-	idx := 0
-	for i := 0; i < len(s); i++ {
-		if s[i:i+len(sep)] == sep {
-			idx = i
-			break
-		}
-	}
-	if idx == 0 {
-		return []string{s}
-	}
-	return []string{s[:idx], s[idx+len(sep):]}
+	return strings.SplitN(s, sep, 2)
 }
 
 // logAction writes an entry to the action_log table for sync.
