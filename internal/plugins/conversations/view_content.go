@@ -120,6 +120,31 @@ func formatCost(cost float64) string {
 	return fmt.Sprintf("$%.1f", cost)
 }
 
+// renderCategoryBadge returns a dim category badge for non-interactive sessions.
+// Interactive sessions return empty string (clean default).
+func renderCategoryBadge(session adapter.Session) string {
+	switch session.SessionCategory {
+	case adapter.SessionCategoryCron:
+		return lipgloss.NewStyle().Foreground(styles.TextSubtle).Render("cron")
+	case adapter.SessionCategorySystem:
+		return lipgloss.NewStyle().Foreground(styles.TextSubtle).Render("sys")
+	default:
+		return ""
+	}
+}
+
+// categoryBadgeText returns the plain text for a category badge (for width calculations).
+func categoryBadgeText(session adapter.Session) string {
+	switch session.SessionCategory {
+	case adapter.SessionCategoryCron:
+		return "cron"
+	case adapter.SessionCategorySystem:
+		return "sys"
+	default:
+		return ""
+	}
+}
+
 func adapterBadgeText(session adapter.Session) string {
 	if session.AdapterIcon != "" {
 		return session.AdapterIcon
