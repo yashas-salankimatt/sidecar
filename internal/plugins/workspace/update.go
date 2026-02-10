@@ -463,6 +463,11 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		// Track unchanged poll for throttle reset (td-018f25)
 		if wt := p.findWorktree(msg.WorkspaceName); wt != nil && wt.Agent != nil {
 			wt.Agent.RecordUnchangedPoll()
+			// Update status from session file re-check (td-2fca7d v8).
+			// Session files may change even when tmux output is unchanged
+			// (e.g., agent finishes but terminal output stays the same).
+			wt.Status = msg.CurrentStatus
+			wt.Agent.WaitingFor = msg.WaitingFor
 		}
 		// Content unchanged - use longer interval based on current status
 		interval := pollIntervalIdle
