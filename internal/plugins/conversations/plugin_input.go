@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/marcus/sidecar/internal/adapter"
 	appmsg "github.com/marcus/sidecar/internal/msg"
 	"github.com/marcus/sidecar/internal/plugin"
 )
@@ -768,6 +769,18 @@ func (p *Plugin) updateFilter(msg tea.KeyMsg) (plugin.Plugin, tea.Cmd) {
 	case "3":
 		// Toggle model filter: haiku
 		p.filters.ToggleModel("haiku")
+
+	case "i":
+		// Toggle category filter: interactive
+		p.filters.ToggleCategory(adapter.SessionCategoryInteractive)
+
+	case "r":
+		// Toggle category filter: cron
+		p.filters.ToggleCategory(adapter.SessionCategoryCron)
+
+	case "s":
+		// Toggle category filter: system
+		p.filters.ToggleCategory(adapter.SessionCategorySystem)
 
 	case "t":
 		// Toggle date filter: today

@@ -235,6 +235,9 @@ func adapterFilterOptions(adapters map[string]adapter.Adapter) []adapterFilterOp
 		"1": true,
 		"2": true,
 		"3": true,
+		"i": true, // category: interactive
+		"r": true, // category: cron
+		"s": true, // category: system
 		"t": true,
 		"y": true,
 		"w": true,
@@ -953,6 +956,27 @@ func (p *Plugin) renderFilterMenu(height int) string {
 		}
 		sb.WriteString("\n")
 	}
+
+	// Category filters
+	sb.WriteString(styles.Subtitle.Render("Category:"))
+	sb.WriteString("\n")
+	categories := []struct {
+		key  string
+		name string
+		cat  string
+	}{
+		{"i", "Interactive", adapter.SessionCategoryInteractive},
+		{"r", "Cron jobs", adapter.SessionCategoryCron},
+		{"s", "System", adapter.SessionCategorySystem},
+	}
+	for _, c := range categories {
+		checkbox := "[ ]"
+		if p.filters.HasCategory(c.cat) {
+			checkbox = "[✓]"
+		}
+		sb.WriteString(fmt.Sprintf("  %s %s %s\n", styles.Code.Render(c.key), checkbox, c.name))
+	}
+	sb.WriteString("\n")
 
 	// Model filters
 	sb.WriteString(styles.Subtitle.Render("Model:"))
