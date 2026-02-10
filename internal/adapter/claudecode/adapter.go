@@ -49,12 +49,42 @@ type messageCacheEntry struct {
 // New creates a new Claude Code adapter.
 func New() *Adapter {
 	home, _ := os.UserHomeDir()
+	projectsDir := findClaudeCodeProjectsDir(home)
 	return &Adapter{
-		projectsDir:  filepath.Join(home, ".claude", "projects"),
+		projectsDir:  projectsDir,
 		sessionIndex: make(map[string]string),
 		metaCache:    make(map[string]sessionMetaCacheEntry),
 		msgCache:     cache.New[messageCacheEntry](msgCacheMaxEntries),
 	}
+}
+
+// findClaudeCodeProjectsDir searches candidate paths for the Claude Code projects directory.
+// Returns the first path that exists, or the primary default if none found.
+func findClaudeCodeProjectsDir(home string) string {
+	candidates := claudeCodeProjectsCandidates(home)
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			return path
+		}
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return filepath.Join(home, ".claude", "projects")
+}
+
+// claudeCodeProjectsCandidates returns candidate paths for the Claude Code projects directory.
+// v1.0.30+ moved from ~/.claude/projects to ~/.config/claude/projects (XDG).
+func claudeCodeProjectsCandidates(home string) []string {
+	var candidates []string
+
+	// v1.0.30+ XDG path (preferred)
+	candidates = append(candidates, filepath.Join(home, ".config", "claude", "projects"))
+
+	// Legacy path (pre-v1.0.30)
+	candidates = append(candidates, filepath.Join(home, ".claude", "projects"))
+
+	return candidates
 }
 
 // ID returns the adapter identifier.
