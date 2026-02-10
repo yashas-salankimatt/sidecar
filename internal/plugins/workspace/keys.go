@@ -755,7 +755,7 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 			case ViewModeList:
 				p.viewMode = ViewModeKanban
 				p.syncListToKanban()
-				return nil
+				return p.pollAllAgentStatusesNow()
 			case ViewModeKanban:
 				p.viewMode = ViewModeList
 				return p.pollSelectedAgentNowIfVisible()

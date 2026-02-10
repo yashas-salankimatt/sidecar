@@ -2,11 +2,12 @@ package workspace
 
 import (
 	"bufio"
-	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,6 +21,12 @@ const (
 	sessionStatusTailBytes  = 2 * 1024 * 1024
 	codexSessionCacheTTL    = 5 * time.Second
 	codexCwdCacheMaxEntries = 2048
+
+	// sessionActivityThreshold is how recently a session file must have been modified
+	// to consider the agent "active". Research shows: bash_progress entries write every 1s,
+	// agent_progress entries every 0.5-3s, but LLM thinking can produce gaps up to 55s with
+	// no writes. When mtime is stale, we fall back to JSONL content parsing (td-2fca7d).
+	sessionActivityThreshold = 30 * time.Second
 )
 
 type codexSessionCacheEntry struct {
@@ -48,6 +55,37 @@ var codexSessionCwdCache = struct {
 	entries: make(map[string]codexSessionCwdCacheEntry),
 }
 
+// isFileRecentlyModified returns true if the file at path was modified within threshold.
+func isFileRecentlyModified(path string, threshold time.Duration) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) < threshold
+}
+
+// anyFileRecentlyModified returns true if any file with the given suffix in dir
+// was modified within threshold. Used to check sub-agent session files.
+func anyFileRecentlyModified(dir, suffix string, threshold time.Duration) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), suffix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if time.Since(info.ModTime()) < threshold {
+			return true
+		}
+	}
+	return false
+}
+
 // detectAgentSessionStatus checks agent session files to determine if an agent
 // is waiting for user input or actively processing.
 // Returns StatusWaiting if last message is from assistant (agent finished, waiting for user).
@@ -70,9 +108,30 @@ func detectAgentSessionStatus(agentType AgentType, worktreePath string) (Worktre
 	}
 }
 
-// detectClaudeSessionStatus checks Claude session files.
+// claudeProjectDirName encodes an absolute path into Claude Code's project directory name.
+// Claude Code replaces slashes, underscores, and other non-alphanumeric characters with dashes.
+// e.g., /Users/foo/my_project becomes -Users-foo-my-project
+func claudeProjectDirName(absPath string) string {
+	var b strings.Builder
+	b.Grow(len(absPath))
+	for _, r := range absPath {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
+// detectClaudeSessionStatus checks Claude session files using mtime + JSONL fallback.
 // Claude stores sessions in ~/.claude/projects/{path-with-dashes}/*.jsonl
-// Path format: /Users/foo/code/project becomes -Users-foo-code-project
+// Sub-agent sessions in {session-uuid}/subagents/agent-*.jsonl
+//
+// Detection strategy (td-2fca7d):
+//  1. If main session or any sub-agent file was recently modified → active
+//  2. Otherwise, fall back to JSONL content: last user entry → active (thinking),
+//     last assistant entry → waiting (idle)
 func detectClaudeSessionStatus(worktreePath string) (WorktreeStatus, bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -84,23 +143,54 @@ func detectClaudeSessionStatus(worktreePath string) (WorktreeStatus, bool) {
 		return 0, false
 	}
 
-	// Claude Code uses path with slashes replaced by dashes
-	// e.g., /Users/foo/code/project becomes -Users-foo-code-project
-	pathWithDashes := strings.ReplaceAll(absPath, "/", "-")
-	projectDir := filepath.Join(home, ".claude", "projects", pathWithDashes)
+	// Claude Code encodes the project path by replacing non-alphanumeric chars with dashes (td-2fca7d).
+	projectDirName := claudeProjectDirName(absPath)
+	projectDir := filepath.Join(home, ".claude", "projects", projectDirName)
 
-	// Find most recent main session file (UUID-based, not agent-* prefixed)
-	// Agent subprocesses create agent-* files; we want the main session
-	sessionFile, err := findMostRecentJSONL(projectDir, "agent-")
-	if err != nil || sessionFile == "" {
+	// Get session files sorted by mtime (most recent first).
+	// We iterate candidates because the most recent file may be abandoned
+	// (e.g., only file-history-snapshot entries with no user/assistant messages).
+	sessionFiles, err := findRecentJSONLFiles(projectDir, "agent-")
+	if err != nil || len(sessionFiles) == 0 {
+		slog.Debug("claude session: no session file found", "projectDir", projectDir, "err", err)
 		return 0, false
 	}
 
-	return getLastMessageStatusJSONL(sessionFile, "type", "user", "assistant")
+	for _, sessionFile := range sessionFiles {
+		// Fast path: if the main session file was recently modified, agent is active.
+		if isFileRecentlyModified(sessionFile, sessionActivityThreshold) {
+			slog.Debug("claude session: active (main file mtime)", "file", filepath.Base(sessionFile))
+			return StatusActive, true
+		}
+
+		// Check sub-agent files: main session stops receiving agent_progress entries
+		// 20-45s before sub-agents finish, but sub-agent files continue being written
+		// (e.g., bash_progress every 1s during command execution).
+		sessionUUID := strings.TrimSuffix(filepath.Base(sessionFile), ".jsonl")
+		subagentsDir := filepath.Join(projectDir, sessionUUID, "subagents")
+		if anyFileRecentlyModified(subagentsDir, ".jsonl", sessionActivityThreshold) {
+			slog.Debug("claude session: active (sub-agent file mtime)", "file", filepath.Base(sessionFile))
+			return StatusActive, true
+		}
+
+		// Slow path: all files are stale. Fall back to JSONL content to distinguish
+		// "thinking" (last entry = user, agent is generating) from "idle" (last entry = assistant).
+		status, ok := getLastMessageStatusJSONL(sessionFile, "type", "user", "assistant")
+		if ok {
+			slog.Debug("claude session: status from JSONL fallback", "status", status, "file", filepath.Base(sessionFile))
+			return status, true
+		}
+		// No user/assistant entry found (abandoned session) — try next candidate (td-2fca7d v8).
+		slog.Debug("claude session: skipping abandoned file", "file", filepath.Base(sessionFile))
+	}
+
+	slog.Debug("claude session: no valid session file found", "projectDir", projectDir, "candidates", len(sessionFiles))
+	return 0, false
 }
 
-// detectCodexSessionStatus checks Codex session files.
-// Codex stores sessions in ~/.codex/sessions/*.jsonl with CWD field.
+// detectCodexSessionStatus checks Codex session files using mtime + JSONL fallback.
+// Codex stores sessions in ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl with CWD field.
+// Codex has no sub-agents — all activity is recorded in one file per session.
 func detectCodexSessionStatus(worktreePath string) (WorktreeStatus, bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -120,6 +210,12 @@ func detectCodexSessionStatus(worktreePath string) (WorktreeStatus, bool) {
 		return 0, false
 	}
 
+	// Fast path: recently modified file means agent is active
+	if isFileRecentlyModified(sessionFile, sessionActivityThreshold) {
+		return StatusActive, true
+	}
+
+	// Slow path: fall back to JSONL content parsing
 	return getCodexLastMessageStatus(sessionFile)
 }
 
@@ -285,36 +381,53 @@ func pruneCodexSessionCWDCacheLocked() {
 // findMostRecentJSONL finds most recent .jsonl file in dir.
 // excludePrefix: if non-empty, files starting with this prefix are skipped.
 func findMostRecentJSONL(dir string, excludePrefix string) (string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	files, err := findRecentJSONLFiles(dir, excludePrefix)
+	if err != nil || len(files) == 0 {
 		return "", err
 	}
+	return files[0], nil
+}
 
-	var mostRecent string
-	var mostRecentTime int64
+// findRecentJSONLFiles returns .jsonl files in dir sorted by mtime descending.
+// Used to iterate session candidates when the most recent file is abandoned (td-2fca7d).
+func findRecentJSONLFiles(dir string, excludePrefix string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	type fileEntry struct {
+		path    string
+		modTime int64
+	}
+	var files []fileEntry
 
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
-		// Skip files matching the exclude prefix (e.g., "agent-" subagent files)
 		if excludePrefix != "" && strings.HasPrefix(e.Name(), excludePrefix) {
 			continue
 		}
-
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
-
-		modTime := info.ModTime().UnixNano()
-		if modTime > mostRecentTime {
-			mostRecentTime = modTime
-			mostRecent = filepath.Join(dir, e.Name())
-		}
+		files = append(files, fileEntry{
+			path:    filepath.Join(dir, e.Name()),
+			modTime: info.ModTime().UnixNano(),
+		})
 	}
 
-	return mostRecent, nil
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime > files[j].modTime
+	})
+
+	result := make([]string, len(files))
+	for i, f := range files {
+		result[i] = f.path
+	}
+	return result, nil
 }
 
 // findMostRecentJSON finds most recent .json file with given prefix.
@@ -390,7 +503,12 @@ func readTailLines(path string, maxBytes int) ([]string, error) {
 	return lines, nil
 }
 
-// getLastMessageStatusJSONL reads JSONL file and returns status based on last message.
+// getLastMessageStatusJSONL reads JSONL file and returns status based on the last
+// user or assistant message. Used as a fallback when mtime-based detection is
+// inconclusive (file is stale but agent may be thinking).
+// Returns StatusActive if last significant entry is from user (agent is thinking).
+// Returns StatusWaiting if last significant entry is from assistant (agent is idle).
+// All other entry types (system, progress, file-history-snapshot) are skipped.
 func getLastMessageStatusJSONL(path, typeField, userVal, assistantVal string) (WorktreeStatus, bool) {
 	lines, err := readTailLines(path, sessionStatusTailBytes)
 	if err != nil {
@@ -406,46 +524,48 @@ func getLastMessageStatusJSONL(path, typeField, userVal, assistantVal string) (W
 		if err := json.Unmarshal([]byte(line), &msg); err != nil {
 			continue
 		}
-		if msgType, ok := msg[typeField].(string); ok {
-			switch msgType {
-			case assistantVal:
-				return StatusWaiting, true
-			case userVal:
-				return StatusActive, true
-			}
+		msgType, ok := msg[typeField].(string)
+		if !ok {
+			continue
+		}
+		switch msgType {
+		case userVal:
+			return StatusActive, true
+		case assistantVal:
+			return StatusWaiting, true
 		}
 	}
 	return 0, false
 }
 
 // findCodexSessionForPath finds the most recent Codex session matching CWD.
+// Codex stores sessions in a YYYY/MM/DD/ date hierarchy under sessionsDir,
+// so we walk the directory tree to find all .jsonl files (td-2fca7d).
 func findCodexSessionForPath(sessionsDir, worktreePath string) (string, error) {
 	if cached, ok := cachedCodexSessionPath(sessionsDir, worktreePath); ok {
 		return cached, nil
 	}
 
-	entries, err := os.ReadDir(sessionsDir)
-	if err != nil {
-		return "", err
-	}
 	var bestPath string
 	var bestModTime int64
 
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
+	_ = filepath.WalkDir(sessionsDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".jsonl") {
+			return nil
 		}
 
-		path := filepath.Join(sessionsDir, e.Name())
-		info, err := e.Info()
+		info, err := d.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 
 		// Check if CWD matches
 		cwd, err := getCodexSessionCWD(path, info)
 		if err != nil || !cwdMatches(cwd, worktreePath) {
-			continue
+			return nil
 		}
 
 		modTime := info.ModTime().UnixNano()
@@ -453,7 +573,8 @@ func findCodexSessionForPath(sessionsDir, worktreePath string) (string, error) {
 			bestModTime = modTime
 			bestPath = path
 		}
-	}
+		return nil
+	})
 
 	if bestPath == "" {
 		setCachedCodexSessionPath(sessionsDir, worktreePath, "")
@@ -729,5 +850,3 @@ func getOpenCodeLastMessageStatus(storageDir, sessionID string) (WorktreeStatus,
 	}
 }
 
-// Unused but keeping for potential future Cursor support
-var _ = md5.Sum // md5 import used for Cursor hash (currently disabled)
