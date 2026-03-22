@@ -188,6 +188,7 @@ func (p *Plugin) loadFullFileDiff(path string, staged bool, status FileStatus, c
 			NewContent: newContent,
 			Parsed:     parsed,
 			ForInline:  forInline,
+			RawDiff:    rawDiff,
 		}
 	}
 }

@@ -518,10 +518,9 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 	if layout := state.GetTermPanelLayout(); layout == "right" {
 		p.termPanelLayout = TermPanelRight
 	}
-	// Restore terminal panel visibility from last session
-	if state.GetTermPanelVisible() {
-		p.termPanelVisible = true
-	}
+	// Don't auto-restore terminal panel visibility from previous session.
+	// Creating a tmux session on startup can surprise users who didn't expect
+	// a terminal to appear. The user can toggle it with Ctrl+T when needed.
 
 	// Load saved diff view mode
 	switch state.GetWorkspaceDiffMode() {

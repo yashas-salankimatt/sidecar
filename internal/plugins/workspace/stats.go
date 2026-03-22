@@ -87,6 +87,12 @@ func getDiffStats(workdir string, stats *GitStats) error {
 	if len(untrackedPaths) == 0 {
 		return nil
 	}
+	// Skip wc -l for repos with many untracked files (e.g. node_modules not in .gitignore)
+	// to avoid slow stat computation on every refresh.
+	if len(untrackedPaths) > 1000 {
+		stats.FilesChanged += len(untrackedPaths) // Still count files, just not lines
+		return nil
+	}
 
 	// Count lines in untracked files using wc -l in batches
 	const batchSize = 500

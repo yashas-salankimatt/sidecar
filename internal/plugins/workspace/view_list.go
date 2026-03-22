@@ -445,10 +445,16 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 		prIcon = " PR"
 	}
 
+	// Sidebar display settings
+	var sdCfg config.SidebarDisplayConfig
+	if p.ctx.Config != nil {
+		sdCfg = p.ctx.Config.Plugins.Workspace.SidebarDisplay
+	}
+
 	// Name and time
 	name := wt.Name
 	// Strip repo prefix from non-main worktrees when configured
-	if !wt.IsMain && p.ctx.Config != nil && p.ctx.Config.Plugins.Workspace.SidebarDisplay.HideRepoPrefix {
+	if !wt.IsMain && sdCfg.HideRepoPrefix {
 		repoName := filepath.Base(p.ctx.ProjectRoot)
 		if repoName != "" && strings.HasPrefix(name, repoName+"-") {
 			name = name[len(repoName)+1:]
@@ -486,12 +492,6 @@ func (p *Plugin) renderWorktreeItem(wt *Worktree, selected bool, width int) stri
 		} else {
 			name = "…"
 		}
-	}
-
-	// Sidebar display settings
-	var sdCfg config.SidebarDisplayConfig
-	if p.ctx.Config != nil {
-		sdCfg = p.ctx.Config.Plugins.Workspace.SidebarDisplay
 	}
 
 	// Stats if available

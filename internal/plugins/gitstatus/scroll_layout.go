@@ -1,11 +1,17 @@
 package gitstatus
 
 import (
-	"log/slog"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+
+// commitPreviewHeaderLines is the number of lines consumed by renderCommitPreview
+// before the body starts. Kept as a package-level constant so commitBodyHeight and
+// renderCommitPreview stay in sync. Update this if the header layout changes.
+//
+// Layout: 1 (initial currentY) + 2 (hash + blank) + 1 (author) + 2 (date + blank)
+//       + 1 (subject) + 1 (blank before body) = 8
+const commitPreviewHeaderLines = 8
 
 // commitBodyHeight returns the number of visible lines available for the expanded
 // commit body, matching the calculation in renderCommitPreview.
@@ -15,11 +21,8 @@ func (p *Plugin) commitBodyHeight() int {
 	if visibleHeight < 6 {
 		visibleHeight = 6
 	}
-	// currentY at the point body starts rendering:
-	// 1 (initial) + 2 (hash + blank) + 1 (author) + 2 (date + blank) + 1 (subject) + 1 (blank before body)
-	headerLines := 8
 	// bodyHeight = visibleHeight - currentY + 1
-	h := visibleHeight - headerLines + 1
+	h := visibleHeight - commitPreviewHeaderLines + 1
 	if h < 3 {
 		h = 3
 	}
@@ -265,18 +268,8 @@ func (p *Plugin) clampDiffScroll() {
 		if maxScroll < 0 {
 			maxScroll = 0
 		}
-		before := p.diffScroll
 		if p.diffScroll > maxScroll {
 			p.diffScroll = maxScroll
-		}
-		if before != p.diffScroll {
-			slog.Debug("clampDiffScroll clamped",
-				"before", before,
-				"after", p.diffScroll,
-				"maxScroll", maxScroll,
-				"totalLines", lines,
-				"height", p.height,
-			)
 		}
 	} else {
 		lines := countLines(p.diffContent)

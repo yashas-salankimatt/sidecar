@@ -312,6 +312,11 @@ func (t *FileTree) loadDiffStatsFor(staged bool) error {
 }
 
 // loadUntrackedStats counts lines in untracked files to show as additions.
+// untrackedStatsThreshold is the max number of untracked files to run wc -l on.
+// Beyond this, stat computation is skipped to avoid slow git refreshes in repos
+// with many untracked files (e.g. node_modules not in .gitignore).
+const untrackedStatsThreshold = 1000
+
 func (t *FileTree) loadUntrackedStats() error {
 	if len(t.Untracked) == 0 {
 		return nil
@@ -331,6 +336,9 @@ func (t *FileTree) loadUntrackedStats() error {
 	if len(paths) == 0 {
 		return nil
 	}
+	if len(paths) > untrackedStatsThreshold {
+		return nil // Too many untracked files; skip to avoid slow refreshes
+	}
 
 	// Batch wc calls to avoid ARG_MAX limits with many untracked files
 	const batchSize = 500
@@ -349,18 +357,18 @@ func (t *FileTree) loadUntrackedStats() error {
 		}
 
 		// Parse wc output: "  123 /path/to/file"
+		// Use strings.Fields to handle macOS leading-space format correctly.
 		scanner := bufio.NewScanner(bytes.NewReader(output))
 		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			parts := strings.SplitN(line, " ", 2)
-			if len(parts) != 2 {
+			fields := strings.Fields(scanner.Text())
+			if len(fields) < 2 {
 				continue
 			}
-			count, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+			count, err := strconv.Atoi(fields[0])
 			if err != nil {
 				continue
 			}
-			path := strings.TrimSpace(parts[1])
+			path := strings.Join(fields[1:], " ")
 			// Skip the "total" summary line emitted by wc when given multiple files
 			if path == "total" {
 				continue

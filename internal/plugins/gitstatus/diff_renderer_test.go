@@ -799,3 +799,106 @@ func TestFullFileDiff_FullFileLineToHunkLine(t *testing.T) {
 		t.Errorf("FullFileLineToHunkLine on nil = %d, want 0", got)
 	}
 }
+
+func TestFullFileLineToHunkLine_MultiHunk(t *testing.T) {
+	// Two hunks: one at old lines 3-4, another at old lines 10-11.
+	// This tests off-by-one behaviour with multiple hunks where the totalLines
+	// counter must account for hunk header lines.
+	parsed := &ParsedDiff{
+		Hunks: []Hunk{
+			{
+				OldStart: 3, OldCount: 2, NewStart: 3, NewCount: 2,
+				Lines: []DiffLine{
+					{Type: LineRemove, OldLineNo: 3, Content: "old3"},
+					{Type: LineAdd, NewLineNo: 3, Content: "new3"},
+					{Type: LineContext, OldLineNo: 4, NewLineNo: 4, Content: "ctx4"},
+				},
+			},
+			{
+				OldStart: 10, OldCount: 2, NewStart: 10, NewCount: 2,
+				Lines: []DiffLine{
+					{Type: LineRemove, OldLineNo: 10, Content: "old10"},
+					{Type: LineAdd, NewLineNo: 10, Content: "new10"},
+					{Type: LineContext, OldLineNo: 11, NewLineNo: 11, Content: "ctx11"},
+				},
+			},
+		},
+	}
+
+	ffd := &FullFileDiff{
+		Lines: []FullFileLine{
+			{Type: LineContext, OldLineNo: 1, NewLineNo: 1},   // 0
+			{Type: LineContext, OldLineNo: 2, NewLineNo: 2},   // 1
+			{Type: LineRemove, OldLineNo: 3},                  // 2
+			{Type: LineAdd, NewLineNo: 3},                     // 3
+			{Type: LineContext, OldLineNo: 4, NewLineNo: 4},   // 4
+			{Type: LineContext, OldLineNo: 5, NewLineNo: 5},   // 5 — between hunks
+			{Type: LineContext, OldLineNo: 6, NewLineNo: 6},   // 6
+			{Type: LineContext, OldLineNo: 7, NewLineNo: 7},   // 7
+			{Type: LineContext, OldLineNo: 8, NewLineNo: 8},   // 8
+			{Type: LineContext, OldLineNo: 9, NewLineNo: 9},   // 9
+			{Type: LineRemove, OldLineNo: 10},                 // 10
+			{Type: LineAdd, NewLineNo: 10},                    // 11
+			{Type: LineContext, OldLineNo: 11, NewLineNo: 11}, // 12
+			{Type: LineContext, OldLineNo: 12, NewLineNo: 12}, // 13 — after all hunks
+		},
+	}
+
+	tests := []struct {
+		name    string
+		lineIdx int
+		want    int
+	}{
+		// Hunk 0: header at totalLines=0, lines at 1,2,3
+		{"remove in hunk 0", 2, 1},  // old line 3 → hunk 0 header(0) + 1
+		{"add in hunk 0", 3, 2},     // new line 3 → hunk 0 header(0) + 2
+		{"context in hunk 0", 4, 3}, // old line 4 → hunk 0 header(0) + 3
+
+		// Hunk 1: header at totalLines=4, lines at 5,6,7
+		{"remove in hunk 1", 10, 5}, // old line 10 → hunk 1 header(4) + 1
+		{"add in hunk 1", 11, 6},    // new line 10 → hunk 1 header(4) + 2
+		{"context in hunk 1", 12, 7}, // old line 11 → hunk 1 header(4) + 3
+
+		// Context between hunks (old line 5): not in any hunk's Lines,
+		// falls back to bestHunkLine = hunk 0 start (0)
+		{"between hunks", 5, 0},
+
+		// Context after all hunks (old line 12): falls back to bestHunkLine = hunk 1 start (4)
+		{"after all hunks", 13, 4},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ffd.FullFileLineToHunkLine(tt.lineIdx, parsed)
+			if got != tt.want {
+				t.Errorf("FullFileLineToHunkLine(%d) = %d, want %d", tt.lineIdx, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFullFileLineToHunkLine_OutOfBounds(t *testing.T) {
+	parsed := &ParsedDiff{
+		Hunks: []Hunk{
+			{OldStart: 1, Lines: []DiffLine{{Type: LineContext, OldLineNo: 1, NewLineNo: 1}}},
+		},
+	}
+	ffd := &FullFileDiff{
+		Lines: []FullFileLine{
+			{Type: LineContext, OldLineNo: 1, NewLineNo: 1},
+		},
+	}
+
+	// Negative index
+	if got := ffd.FullFileLineToHunkLine(-1, parsed); got != 0 {
+		t.Errorf("FullFileLineToHunkLine(-1) = %d, want 0", got)
+	}
+	// Index beyond length
+	if got := ffd.FullFileLineToHunkLine(5, parsed); got != 0 {
+		t.Errorf("FullFileLineToHunkLine(5) = %d, want 0", got)
+	}
+	// Nil parsed
+	if got := ffd.FullFileLineToHunkLine(0, nil); got != 0 {
+		t.Errorf("FullFileLineToHunkLine with nil parsed = %d, want 0", got)
+	}
+}

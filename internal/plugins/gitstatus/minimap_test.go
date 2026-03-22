@@ -72,6 +72,35 @@ func TestRenderMinimap_ContainsHalfBlocks(t *testing.T) {
 	}
 }
 
+func TestNormalizeLineCount(t *testing.T) {
+	tests := []struct {
+		name       string
+		a, b       string
+		wantALines int
+		wantBLines int
+	}{
+		{"equal", "a\nb\n", "x\ny\n", 2, 2},
+		{"a shorter", "a\n", "x\ny\nz\n", 3, 3},
+		{"b shorter", "a\nb\nc\n", "x\n", 3, 3},
+		{"both empty", "", "", 0, 0},
+		{"a empty", "", "x\ny\n", 2, 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, b := normalizeLineCount(tt.a, tt.b)
+			aLines := strings.Count(a, "\n")
+			bLines := strings.Count(b, "\n")
+			if aLines != bLines {
+				t.Errorf("line count mismatch: a=%d, b=%d", aLines, bLines)
+			}
+			if aLines != tt.wantALines {
+				t.Errorf("a lines = %d, want %d", aLines, tt.wantALines)
+			}
+		})
+	}
+}
+
 func TestRenderMinimap_ShortFile(t *testing.T) {
 	// File with 3 lines, minimap height 10 — height caps to totalLines (3).
 	lines := []FullFileLine{

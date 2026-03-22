@@ -2,7 +2,6 @@ package gitstatus
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -709,17 +708,7 @@ func (p *Plugin) renderDiffPane(visibleHeight int) string {
 			}
 			if mmStr != "" && diffW >= 30 {
 				diffContent = RenderFullFileSideBySide(p.diffPaneFullFileDiff, diffW, p.diffPaneScroll, contentHeight, p.diffPaneHorizScroll, highlighter, p.diffWrapEnabled)
-				diffLines := strings.Count(diffContent, "\n")
-				mmLines := strings.Count(mmStr, "\n")
-				slog.Debug("minimap join sidebar",
-					"diffLines", diffLines,
-					"mmLines", mmLines,
-					"contentHeight", contentHeight,
-					"diffPaneScroll", p.diffPaneScroll,
-					"totalLines", len(p.diffPaneFullFileDiff.Lines),
-					"visibleHeight", visibleHeight,
-					"height", p.height,
-				)
+				diffContent, mmStr = normalizeLineCount(diffContent, mmStr)
 				diffContent = lipgloss.JoinHorizontal(lipgloss.Top, diffContent, mmStr)
 				diffX := 0
 				if p.sidebarVisible {

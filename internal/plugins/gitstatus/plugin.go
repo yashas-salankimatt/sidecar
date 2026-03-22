@@ -84,7 +84,8 @@ type Plugin struct {
 	diffPaneHorizScroll  int           // Horizontal scroll for inline diff
 	diffPaneParsedDiff   *ParsedDiff   // Parsed diff for inline view
 	diffPaneViewMode     DiffViewMode  // Unified, side-by-side, or full-file for inline diff
-	diffPaneFullFileDiff *FullFileDiff // Full-file diff for inline view (loaded on demand)
+	diffPaneFullFileDiff    *FullFileDiff // Full-file diff for inline view (loaded on demand)
+	diffPaneLastRawDiff     string        // Hash of last raw diff used to build full-file diff (avoids redundant reloads)
 
 	// Commit preview state (for three-pane view when on commit)
 	previewCommit       *Commit // Commit being previewed in right pane
@@ -525,15 +526,21 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		if plugin.IsStale(p.ctx, msg) {
 			return p, nil
 		}
-		ffd := BuildFullFileDiff(msg.OldContent, msg.NewContent, msg.Parsed)
 		if msg.ForInline {
 			if msg.File == p.selectedDiffFile {
+				// Skip rebuild if the raw diff hasn't changed (avoids redundant work on watcher refresh)
+				if msg.RawDiff != "" && msg.RawDiff == p.diffPaneLastRawDiff && p.diffPaneFullFileDiff != nil {
+					return p, nil
+				}
+				p.diffPaneLastRawDiff = msg.RawDiff
+				ffd := BuildFullFileDiff(msg.OldContent, msg.NewContent, msg.Parsed)
 				p.diffPaneFullFileDiff = ffd
 				// Clamp scroll if new content is shorter
 				p.clampDiffPaneScroll()
 			}
 		} else {
 			if msg.File == p.diffFile {
+				ffd := BuildFullFileDiff(msg.OldContent, msg.NewContent, msg.Parsed)
 				p.fullFileDiff = ffd
 				// Clamp scroll if new content is shorter
 				p.clampDiffScroll()
@@ -1278,7 +1285,8 @@ type FullFileDiffLoadedMsg struct {
 	OldContent string
 	NewContent string
 	Parsed     *ParsedDiff
-	ForInline  bool // True if this is for the inline diff pane, false for full-screen
+	ForInline  bool   // True if this is for the inline diff pane, false for full-screen
+	RawDiff    string // Raw diff string for dedup (skip rebuild when unchanged)
 }
 
 // GetEpoch implements plugin.EpochMessage.

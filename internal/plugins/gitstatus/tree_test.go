@@ -2,6 +2,8 @@ package gitstatus
 
 import (
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -458,5 +460,58 @@ func TestTotalCount(t *testing.T) {
 
 	if tree.TotalCount() != 6 {
 		t.Errorf("expected 6, got %d", tree.TotalCount())
+	}
+}
+
+func TestParseWcOutput_FieldsParsing(t *testing.T) {
+	// Verify that strings.Fields correctly parses wc -l output on both
+	// macOS (leading spaces) and Linux (no leading spaces).
+	tests := []struct {
+		name      string
+		line      string
+		wantCount int
+		wantPath  string
+	}{
+		{"linux format", "123 /path/to/file.go", 123, "/path/to/file.go"},
+		{"macOS format with leading spaces", "     123 /path/to/file.go", 123, "/path/to/file.go"},
+		{"path with spaces", "42 /path/to/my file.go", 42, "/path/to/my file.go"},
+		{"macOS path with spaces", "      42 /path/to/my file.go", 42, "/path/to/my file.go"},
+		{"single line file", "1 /a.txt", 1, "/a.txt"},
+		{"zero lines", "0 /empty.txt", 0, "/empty.txt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// This mirrors the parsing logic in loadUntrackedStats
+			fields := strings.Fields(tt.line)
+			if len(fields) < 2 {
+				t.Fatal("expected at least 2 fields")
+			}
+			count, err := strconv.Atoi(fields[0])
+			if err != nil {
+				t.Fatalf("failed to parse count: %v", err)
+			}
+			path := strings.Join(fields[1:], " ")
+
+			if count != tt.wantCount {
+				t.Errorf("count = %d, want %d", count, tt.wantCount)
+			}
+			if path != tt.wantPath {
+				t.Errorf("path = %q, want %q", path, tt.wantPath)
+			}
+		})
+	}
+}
+
+func TestParseWcOutput_TotalLinSkipped(t *testing.T) {
+	// wc -l emits a "total" summary when given multiple files
+	line := "     456 total"
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		t.Fatal("expected at least 2 fields")
+	}
+	path := strings.Join(fields[1:], " ")
+	if path != "total" {
+		t.Errorf("expected path 'total', got %q", path)
 	}
 }
