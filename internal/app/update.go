@@ -301,6 +301,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SwitchWorktreeMsg:
 		// Switch to the requested worktree
+		if msg.SkipWorktreeRestore {
+			return m, m.switchProject(msg.WorktreePath, true, msg.Quiet)
+		}
 		return m, m.switchWorktree(msg.WorktreePath)
 
 	case WorktreeDeletedMsg:
@@ -314,7 +317,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Current worktree was deleted (detected by workspace plugin) - switch to main
 		if msg.MainWorktreePath != "" && msg.MainWorktreePath != m.ui.WorkDir {
 			return m, tea.Batch(
-				m.switchProject(msg.MainWorktreePath),
+				m.switchProject(msg.MainWorktreePath, false, false),
 				func() tea.Msg {
 					return ToastMsg{
 						Message:  "Worktree deleted, switched to main repo",
@@ -759,7 +762,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				selectedProject := projects[m.projectSwitcherCursor]
 				m.resetProjectSwitcher()
 				m.updateContext()
-				return m, m.switchProject(selectedProject.Path)
+				return m, m.switchProject(selectedProject.Path, false, false)
 			}
 			return m, nil
 
@@ -1463,7 +1466,7 @@ func (m *Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd
 				selectedProject := projects[idx]
 				m.resetProjectSwitcher()
 				m.updateContext()
-				return m, m.switchProject(selectedProject.Path)
+				return m, m.switchProject(selectedProject.Path, false, false)
 			}
 		}
 		return m, nil
@@ -1480,7 +1483,7 @@ func (m *Model) handleProjectSwitcherMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd
 			selectedProject := projects[m.projectSwitcherCursor]
 			m.resetProjectSwitcher()
 			m.updateContext()
-			return m, m.switchProject(selectedProject.Path)
+			return m, m.switchProject(selectedProject.Path, false, false)
 		}
 		return m, nil
 	}

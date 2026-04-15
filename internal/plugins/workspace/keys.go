@@ -46,6 +46,8 @@ func (p *Plugin) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return p.handleFilePickerKeys(msg)
 	case ViewModeInteractive:
 		return p.handleInteractiveKeys(msg)
+	case ViewModeMultiProject:
+		return p.handleMultiProjectKeys(msg)
 	}
 	return nil
 }
@@ -76,7 +78,7 @@ func (p *Plugin) handleTypeSelectorKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case "cancel", typeSelectorCancelID:
-		p.viewMode = ViewModeList
+		p.returnFromModal()
 		p.clearTypeSelectorModal()
 		return nil
 	case typeSelectorConfirmID, "type-shell", "type-workspace":
@@ -86,9 +88,20 @@ func (p *Plugin) handleTypeSelectorKeys(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
+// returnFromModal returns to the appropriate view mode after a modal closes.
+// If we entered the modal from multi-project view, return there; otherwise return to list.
+func (p *Plugin) returnFromModal() {
+	if p.mpCreateTargetPath != "" {
+		p.viewMode = ViewModeMultiProject
+		p.mpCreateTargetPath = ""
+	} else {
+		p.viewMode = ViewModeList
+	}
+}
+
 // executeTypeSelectorConfirm executes the type selector confirmation.
 func (p *Plugin) executeTypeSelectorConfirm() tea.Cmd {
-	p.viewMode = ViewModeList
+	p.returnFromModal()
 	if p.typeSelectorIdx == 0 {
 		// Shell selected - use createShellWithAgent which captures agent info (td-16b2b5)
 		cmd := p.createShellWithAgent()
@@ -992,6 +1005,9 @@ func (p *Plugin) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 		if p.activePane == PanePreview && p.previewTab == PreviewTabDiff {
 			return p.handleDiffTabKey(msg)
 		}
+	case "P":
+		// Toggle multi-project view
+		return p.enterMultiProjectView()
 	case "ctrl+d":
 		// Page down in preview pane (unified: increase offset toward bottom)
 		if p.activePane == PanePreview {

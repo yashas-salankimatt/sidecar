@@ -527,6 +527,10 @@ func (p *Plugin) createNewShell(customName string) tea.Cmd {
 		displayName = p.nextShellDisplayName()
 	}
 	workDir := p.ctx.WorkDir
+	// Cross-project creation: use the target path if set (multi-project view)
+	if p.mpCreateTargetPath != "" {
+		workDir = p.mpCreateTargetPath
+	}
 
 	return func() tea.Msg {
 		// Check if session already exists (shouldn't happen with unique names)
@@ -582,6 +586,10 @@ func (p *Plugin) createShellWithAgent() tea.Cmd {
 		displayName = p.nextShellDisplayName()
 	}
 	workDir := p.ctx.WorkDir
+	// Cross-project creation: use the target path if set (multi-project view)
+	if p.mpCreateTargetPath != "" {
+		workDir = p.mpCreateTargetPath
+	}
 
 	return func() tea.Msg {
 		// Check if session already exists (shouldn't happen with unique names)

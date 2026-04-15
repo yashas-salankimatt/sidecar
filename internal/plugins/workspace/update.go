@@ -53,6 +53,11 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		}
 
 	case RefreshMsg:
+		// In multi-project mode, skip worktree refresh — p.worktrees is managed
+		// by mpOnCursorMove from the scan data, not by refreshWorktrees.
+		if p.viewMode == ViewModeMultiProject {
+			return p, nil
+		}
 		if !p.refreshing {
 			p.refreshing = true
 			cmds = append(cmds, p.refreshWorktrees())
@@ -74,6 +79,13 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 		p.refreshing = false
 		p.lastRefresh = time.Now()
 		if msg.Err == nil {
+			// In multi-project mode, don't overwrite p.worktrees — they are
+			// populated from the mpTree scan data for whichever project the
+			// cursor is on, which may differ from ctx.WorkDir's project.
+			if p.viewMode == ViewModeMultiProject {
+				return p, nil
+			}
+
 			// Preserve selection by name (not index) across refresh
 			var selectedName string
 			if p.selectedIdx >= 0 && p.selectedIdx < len(p.worktrees) {
@@ -1568,6 +1580,19 @@ func (p *Plugin) Update(msg tea.Msg) (plugin.Plugin, tea.Cmd) {
 			return p, nil // Stale timer or panel hidden
 		}
 		return p, p.handleTermPanelPoll(msg.SessionName)
+
+	// --- Multi-project view messages ---
+
+	case mpPollDoneMsg:
+		// No-op: just triggers a re-render so the preview shows the freshly captured output.
+
+	case MultiProjectScanDoneMsg:
+		if p.viewMode == ViewModeMultiProject {
+			cmd := p.handleMultiProjectScanDone(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 
 	case tea.KeyMsg:
 		cmd := p.handleKeyPress(msg)

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/marcus/sidecar/internal/config"
 )
 
 // mouseEscapeRegex matches SGR mouse escape sequences like \x1b[<35;192;47M or \x1b[<0;50;20m
@@ -39,6 +41,7 @@ const (
 	ViewModeInteractive                    // Interactive mode (tmux input passthrough)
 	ViewModeFetchPR                        // Fetch remote PR modal
 	ViewModeAgentConfig                    // Agent config modal (start/restart with options)
+	ViewModeMultiProject                   // Multi-project view (all projects with worktrees/shells)
 )
 
 // FocusPane represents which pane is active in the split view.
@@ -549,6 +552,89 @@ func (b *OutputBuffer) Len() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.lines)
+}
+
+// --- Multi-project view types ---
+
+// TreeItemKind identifies the type of item in the multi-project tree.
+type TreeItemKind int
+
+const (
+	TreeItemProject  TreeItemKind = iota // Project header row
+	TreeItemWorktree                     // Worktree within a project
+	TreeItemShell                        // Shell session within a project
+)
+
+// MultiProjectSort defines sort modes for the multi-project view.
+type MultiProjectSort int
+
+const (
+	SortByConfig MultiProjectSort = iota // Config file order
+	SortByName                           // Alphabetical
+	SortByStatus                         // Agent status grouping
+)
+
+// String returns the display name for a sort mode.
+func (s MultiProjectSort) String() string {
+	switch s {
+	case SortByConfig:
+		return "Config"
+	case SortByName:
+		return "Name"
+	case SortByStatus:
+		return "Status"
+	default:
+		return "Unknown"
+	}
+}
+
+// ProjectNode holds all data for one configured project in the multi-project view.
+type ProjectNode struct {
+	Config    config.ProjectConfig
+	Worktrees []*Worktree
+	Shells    []*ShellSession
+	Expanded  bool  // Whether this project is expanded in the tree
+	IsCurrent bool  // True if this matches the current plugin context
+	ScanErr   error // Non-nil if project path is invalid or not a git repo
+}
+
+// ItemCount returns total number of worktrees + shells.
+func (n *ProjectNode) ItemCount() int {
+	return len(n.Worktrees) + len(n.Shells)
+}
+
+// ActiveCount returns number of items with running agents.
+func (n *ProjectNode) ActiveCount() int {
+	count := 0
+	for _, wt := range n.Worktrees {
+		if wt.Agent != nil && wt.Status != StatusPaused && wt.Status != StatusDone {
+			count++
+		}
+	}
+	for _, sh := range n.Shells {
+		if sh.Agent != nil {
+			count++
+		}
+	}
+	return count
+}
+
+// TreeItem is a flattened representation of a node in the multi-project sidebar tree.
+type TreeItem struct {
+	Kind       TreeItemKind // What type of row this is
+	ProjectIdx int          // Index into the projects slice
+	ItemIdx    int          // Index into the project's worktrees or shells slice
+	Depth      int          // 0 for project headers, 1 for children
+}
+
+// MultiProjectTree manages the hierarchical project tree with navigation state.
+type MultiProjectTree struct {
+	Projects     []ProjectNode
+	FlatItems    []TreeItem       // Flattened visible items for rendering/navigation
+	Cursor       int              // Index into FlatItems
+	ScrollOffset int              // Scroll offset for sidebar
+	Filter       string           // Active filter text (empty = no filter)
+	SortMode     MultiProjectSort // Current sort order
 }
 
 // validateManagedSessionsMsg triggers periodic validation of managedSessions.

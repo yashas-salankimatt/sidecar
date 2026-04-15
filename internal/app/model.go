@@ -683,7 +683,9 @@ func projectSwitcherEnsureCursorVisible(cursor, scroll, maxVisible int) int {
 }
 
 // switchProject switches all plugins to a new project directory.
-func (m *Model) switchProject(projectPath string) tea.Cmd {
+// skipWorktreeRestore: if true, use the exact projectPath without restoring saved worktree.
+// quiet: if true, suppress the "Switched to..." toast notification.
+func (m *Model) switchProject(projectPath string, skipWorktreeRestore bool, quiet bool) tea.Cmd {
 	// Skip if already on this project
 	if projectPath == m.ui.WorkDir {
 		return func() tea.Msg {
@@ -704,13 +706,16 @@ func (m *Model) switchProject(projectPath string) tea.Cmd {
 	// Check if target project has a saved worktree we should restore.
 	// Only restore if projectPath is the main repo - if user explicitly chose a
 	// specific worktree path (via worktree switcher), respect that choice.
+	// skipWorktreeRestore bypasses this entirely (used by multi-project view
+	// where the user explicitly selected a target path).
 	targetPath := projectPath
 	if targetMainRepo := GetMainWorktreePath(projectPath); targetMainRepo != "" {
 		normalizedProject, _ := normalizePath(projectPath)
 		normalizedTargetMain, _ := normalizePath(targetMainRepo)
 
 		// Only restore saved worktree if switching to the main repo path
-		if normalizedProject == normalizedTargetMain {
+		// and skipWorktreeRestore is not set
+		if !skipWorktreeRestore && normalizedProject == normalizedTargetMain {
 			if savedWorktree := state.GetLastWorktreePath(normalizedTargetMain); savedWorktree != "" {
 				// Don't restore if the saved worktree is where we're coming FROM
 				// (user is explicitly leaving that worktree)
@@ -772,7 +777,10 @@ func (m *Model) switchProject(projectPath string) tea.Cmd {
 		m.FocusPluginByID(newActivePluginID)
 	}
 
-	// Return batch of start commands plus a toast notification
+	// Return batch of start commands plus optional toast notification
+	if quiet {
+		return tea.Batch(startCmds...)
+	}
 	return tea.Batch(
 		tea.Batch(startCmds...),
 		func() tea.Msg {

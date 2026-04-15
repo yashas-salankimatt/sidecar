@@ -83,7 +83,9 @@ type FocusPluginByIDMsg struct {
 // SwitchWorktreeMsg requests switching to a different worktree.
 // Used by the worktree switcher modal and workspace plugin "Open in Git Tab" command.
 type SwitchWorktreeMsg struct {
-	WorktreePath string // Absolute path to the worktree
+	WorktreePath        string // Absolute path to the worktree
+	SkipWorktreeRestore bool   // If true, don't restore saved worktree (use exact path)
+	Quiet               bool   // If true, suppress toast notification
 }
 
 // SwitchWorktree returns a command that requests switching to a worktree by path.

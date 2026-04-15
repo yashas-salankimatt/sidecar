@@ -407,7 +407,7 @@ func (m *Model) switchWorktree(worktreePath string) tea.Cmd {
 	}
 
 	// Use the same switchProject mechanism - it handles reinit, state save/restore
-	return m.switchProject(worktreePath)
+	return m.switchProject(worktreePath, false, false)
 }
 
 

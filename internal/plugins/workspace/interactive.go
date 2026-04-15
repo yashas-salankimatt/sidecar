@@ -478,6 +478,7 @@ func (p *Plugin) enterInteractiveMode() tea.Cmd {
 	}
 	p.selection.Clear()
 
+	p.preInteractiveViewMode = p.viewMode
 	p.viewMode = ViewModeInteractive
 
 	// Invalidate existing poll timers to prevent duplicate poll chains (td-97327e).
@@ -539,6 +540,7 @@ func (p *Plugin) enterTermPanelInteractiveMode() tea.Cmd {
 		CursorVisible: true,
 	}
 	p.selection.Clear()
+	p.preInteractiveViewMode = p.viewMode
 	p.viewMode = ViewModeInteractive
 
 	// Invalidate the background poll chain so only the interactive poll loop runs.
@@ -807,7 +809,7 @@ func (p *Plugin) previewResizeTarget() string {
 	return wt.Agent.TmuxSession
 }
 
-// exitInteractiveMode exits interactive mode and returns to list view.
+// exitInteractiveMode exits interactive mode and returns to the previous view.
 func (p *Plugin) exitInteractiveMode() {
 	if p.interactiveState != nil {
 		// Preserve focus on whichever sub-pane was interactive
@@ -816,7 +818,12 @@ func (p *Plugin) exitInteractiveMode() {
 	}
 	p.interactiveState = nil
 	p.selection.Clear()
-	p.viewMode = ViewModeList
+	// Restore the view mode that was active before entering interactive mode
+	if p.preInteractiveViewMode != ViewModeInteractive && p.preInteractiveViewMode != 0 {
+		p.viewMode = p.preInteractiveViewMode
+	} else {
+		p.viewMode = ViewModeList
+	}
 }
 
 // handleInteractiveKeys processes key input in interactive mode.

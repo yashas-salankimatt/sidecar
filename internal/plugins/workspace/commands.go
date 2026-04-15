@@ -8,6 +8,14 @@ import (
 // Commands returns the available commands.
 func (p *Plugin) Commands() []plugin.Command {
 	switch p.viewMode {
+	case ViewModeMultiProject:
+		return []plugin.Command{
+			{ID: "exit-multi-project", Name: "Back", Description: "Exit projects view (P)", Context: "workspace-mp-sidebar", Priority: 1},
+			{ID: "cursor-down", Name: "Nav", Description: "Navigate (j/k)", Context: "workspace-mp-sidebar", Priority: 2},
+			{ID: "toggle-expand", Name: "Expand", Description: "Expand/collapse (space)", Context: "workspace-mp-sidebar", Priority: 3},
+			{ID: "filter", Name: "Filter", Description: "Filter (/)", Context: "workspace-mp-sidebar", Priority: 5},
+			{ID: "sort", Name: "Sort", Description: "Sort (s)", Context: "workspace-mp-sidebar", Priority: 6},
+		}
 	case ViewModeInteractive:
 		return []plugin.Command{
 			{ID: "exit-interactive", Name: "Exit", Description: "Exit interactive mode (" + p.getInteractiveExitKey() + ")", Context: "workspace-interactive", Priority: 1},
@@ -310,6 +318,16 @@ func (p *Plugin) FocusContext() string {
 		return "workspace-fetch-pr"
 	case ViewModeFilePicker:
 		return "workspace-file-picker"
+	case ViewModeMultiProject:
+		if p.mpFilterActive {
+			return "workspace-mp-filter"
+		}
+		if p.activePane == PanePreview {
+			// Use standard preview context so all preview keybindings work
+			// (Output/Diff/Task tabs, scrolling, Ctrl+T, interactive, etc.)
+			return "workspace-preview"
+		}
+		return "workspace-mp-sidebar"
 	default:
 		if p.activePane == PanePreview {
 			return "workspace-preview"
@@ -331,6 +349,8 @@ func (p *Plugin) ConsumesTextInput() bool {
 		ViewModeTypeSelector,
 		ViewModeFetchPR:
 		return true
+	case ViewModeMultiProject:
+		return p.mpFilterActive
 	default:
 		return false
 	}

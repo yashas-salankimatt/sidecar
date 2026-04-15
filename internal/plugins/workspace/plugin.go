@@ -336,7 +336,8 @@ type Plugin struct {
 	stateRestored bool
 
 	// Interactive mode state (feature-gated behind tmux_interactive_input)
-	interactiveState   *InteractiveState
+	preInteractiveViewMode ViewMode // View mode before entering interactive (to restore on exit)
+	interactiveState       *InteractiveState
 	lastScrollTime     time.Time // For scroll debouncing (td-e2ce50)
 	lastMouseEventTime time.Time // For suppressing split-CSI "[" near mouse activity
 	scrollBurstCount   int       // Consecutive scroll events for burst detection
@@ -381,6 +382,13 @@ type Plugin struct {
 	// Shell manifest for persistence and cross-instance sync (td-f88fdd)
 	shellManifest *ShellManifest
 	shellWatcher  *ShellWatcher
+
+	// Multi-project view state
+	mpTree             *MultiProjectTree // nil until first entered
+	mpFilterInput      textinput.Model   // Sidebar search/filter input
+	mpFilterActive     bool              // Whether filter input is focused
+	mpCreateTargetPath string            // When creating from multi-project view, target this path
+	mpScanGeneration   int               // Generation counter for scan results
 }
 
 // New creates a new worktree manager plugin.
@@ -449,20 +457,26 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 	p.initialReconnectDone = false
 	p.agents = make(map[string]*Agent)
 	p.managedSessions = make(map[string]bool)
-	p.worktrees = make([]*Worktree, 0)
 	p.attachedSession = ""
 
 	// Reset poll generation counters (td-83dc22): invalidates any stale timers from previous project
 	p.pollGeneration = make(map[string]int)
 	p.shellPollGeneration = make(map[string]int)
 
-	// Reset shell state before initializing for new project (critical for project switching)
+	// Reset worktree/shell state for clean reinit
+	p.worktrees = make([]*Worktree, 0)
 	p.shells = make([]*ShellSession, 0)
 	p.selectedShellIdx = 0
 	p.shellSelected = false
 
 	// Reset state restoration flag for project switching
 	p.stateRestored = false
+
+	// Reset multi-project state for clean re-scan (tree will be rebuilt from config)
+	// The view mode is preserved via state.json and restored below.
+	p.mpTree = nil
+	p.mpCreateTargetPath = ""
+	p.mpScanGeneration++
 
 	// Load shell manifest for persistence (td-f88fdd)
 	projDir, err := projectdir.Resolve(ctx.ProjectRoot)
@@ -519,6 +533,11 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 		ctx.Keymap.RegisterPluginBinding(p.getInteractiveExitKey(), "exit-interactive", "workspace-interactive")
 		ctx.Keymap.RegisterPluginBinding(p.getInteractiveCopyKey(), "copy", "workspace-interactive")
 		ctx.Keymap.RegisterPluginBinding(p.getInteractivePasteKey(), "paste", "workspace-interactive")
+
+		// Multi-project view contexts
+		ctx.Keymap.RegisterPluginBinding("P", "toggle-multi-project", "workspace-list")
+		ctx.Keymap.RegisterPluginBinding("P", "toggle-multi-project", "workspace-kanban")
+		ctx.Keymap.RegisterPluginBinding("P", "exit-multi-project", "workspace-mp-sidebar")
 	}
 
 	// Load saved sidebar width
@@ -551,12 +570,24 @@ func (p *Plugin) Init(ctx *plugin.Context) error {
 		p.diffViewMode = DiffViewFullFile
 	}
 
+	// Restore multi-project view if it was active (survives project switches via Reinit)
+	mpState := state.GetMultiProjectState()
+	if mpState.Active {
+		p.viewMode = ViewModeMultiProject
+		// mpTree will be initialized in enterMultiProjectView() during Start()
+	}
+
 	return nil
 }
 
 // Start begins async operations.
 func (p *Plugin) Start() tea.Cmd {
 	var cmds []tea.Cmd
+
+	// If multi-project view is active, kick off scanning
+	if p.viewMode == ViewModeMultiProject {
+		cmds = append(cmds, p.enterMultiProjectView())
+	}
 
 	// Refresh worktrees - reconnectAgents will be called after worktrees are loaded
 	cmds = append(cmds, p.refreshWorktrees())
@@ -607,6 +638,11 @@ func (p *Plugin) listenForShellManifestChanges() tea.Cmd {
 
 // Stop cleans up plugin resources.
 func (p *Plugin) Stop() {
+	// Save multi-project state before cleanup
+	if p.viewMode == ViewModeMultiProject {
+		p.saveMultiProjectState()
+	}
+
 	// Clean up terminal panel tmux session
 	p.cleanupTermPanelSession()
 

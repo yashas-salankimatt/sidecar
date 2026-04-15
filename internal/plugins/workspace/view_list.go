@@ -83,10 +83,16 @@ func (p *Plugin) View(width, height int) string {
 		return p.renderRenameShellModal(width, height)
 	case ViewModeFetchPR:
 		return p.renderFetchPRModal(width, height)
+	case ViewModeMultiProject:
+		return p.renderMultiProjectView(width, height)
 	case ViewModeFilePicker:
 		background := p.renderListView(width, height)
 		return p.renderFilePickerModal(background)
 	default:
+		// If we entered interactive mode from multi-project view, keep the MP sidebar
+		if p.viewMode == ViewModeInteractive && p.preInteractiveViewMode == ViewModeMultiProject {
+			return p.renderMultiProjectView(width, height)
+		}
 		return p.renderListView(width, height)
 	}
 }

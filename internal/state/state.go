@@ -32,6 +32,9 @@ type State struct {
 
 	// Worktree state: maps main repo path -> last active worktree path
 	LastWorktreePath map[string]string `json:"lastWorktreePath,omitempty"`
+
+	// Multi-project view state (global, not per-workdir)
+	MultiProject *MultiProjectViewState `json:"multiProject,omitempty"`
 }
 
 // FileBrowserTabState holds persistent tab state for the file browser.
@@ -59,6 +62,16 @@ type WorkspaceState struct {
 	WorkspaceName     string            `json:"workspaceName,omitempty"`     // Name of selected workspace
 	ShellTmuxName     string            `json:"shellTmuxName,omitempty"`     // TmuxName of selected shell (empty = workspace selected)
 	ShellDisplayNames map[string]string `json:"shellDisplayNames,omitempty"` // TmuxName -> display name
+}
+
+// MultiProjectViewState holds persistent multi-project view state.
+// Stored globally (not per-workdir) since this view is cross-project.
+type MultiProjectViewState struct {
+	Active           bool     `json:"active,omitempty"`           // Was in multi-project view
+	ExpandedProjects []string `json:"expandedProjects,omitempty"` // Paths of expanded projects
+	SelectedProject  string   `json:"selectedProject,omitempty"`  // Path of project containing selected item
+	SelectedItem     string   `json:"selectedItem,omitempty"`     // Name of selected worktree/shell
+	SortMode         int      `json:"sortMode,omitempty"`         // MultiProjectSort value
 }
 
 // NotesState holds persistent notes plugin state.
@@ -535,6 +548,27 @@ func SetNotesListWidth(width int) error {
 	notesState := current.Notes[""]
 	notesState.ListWidth = width
 	current.Notes[""] = notesState
+	mu.Unlock()
+	return Save()
+}
+
+// GetMultiProjectState returns the saved multi-project view state.
+func GetMultiProjectState() MultiProjectViewState {
+	mu.RLock()
+	defer mu.RUnlock()
+	if current == nil || current.MultiProject == nil {
+		return MultiProjectViewState{}
+	}
+	return *current.MultiProject
+}
+
+// SetMultiProjectState saves the multi-project view state.
+func SetMultiProjectState(s MultiProjectViewState) error {
+	mu.Lock()
+	if current == nil {
+		current = &State{}
+	}
+	current.MultiProject = &s
 	mu.Unlock()
 	return Save()
 }

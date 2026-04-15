@@ -10,10 +10,10 @@ import (
 	"github.com/marcus/sidecar/internal/state"
 )
 
-// isModalViewMode returns true when a modal overlay is active (not List, Kanban, or Interactive).
+// isModalViewMode returns true when a modal overlay is active (not List, Kanban, Interactive, or MultiProject).
 func (p *Plugin) isModalViewMode() bool {
 	switch p.viewMode {
-	case ViewModeList, ViewModeKanban, ViewModeInteractive:
+	case ViewModeList, ViewModeKanban, ViewModeInteractive, ViewModeMultiProject:
 		return false
 	default:
 		return true
@@ -603,6 +603,20 @@ func (p *Plugin) handleMouseClick(action mouse.MouseAction) tea.Cmd {
 	case regionWorktreeItem:
 		// Click on worktree or shell entry - select it
 		if idx, ok := action.Region.Data.(int); ok {
+			// Multi-project tree item (encoded as -(flatIdx + mpHitRegionOffset))
+			if idx <= -mpHitRegionOffset && p.mpTree != nil {
+				flatIdx := -(idx + mpHitRegionOffset)
+				if flatIdx >= 0 && flatIdx < len(p.mpTree.FlatItems) {
+					p.mpTree.Cursor = flatIdx
+					item := p.mpTree.FlatItems[flatIdx]
+					if item.Kind == TreeItemProject {
+						p.mpTree.ToggleExpand(item.ProjectIdx)
+					}
+					p.activePane = PaneSidebar
+					return p.mpOnCursorMove()
+				}
+				return nil
+			}
 			if idx < 0 {
 				// Shell entry clicked (negative index: -1 -> shells[0], -2 -> shells[1], etc.)
 				shellIdx := -(idx + 1)
@@ -900,6 +914,16 @@ func (p *Plugin) handleMouseDoubleClick(action mouse.MouseAction) tea.Cmd {
 	case regionWorktreeItem:
 		// Double-click on worktree or shell - attach to tmux session if exists
 		if idx, ok := action.Region.Data.(int); ok {
+			// Multi-project tree item
+			if idx <= -mpHitRegionOffset && p.mpTree != nil {
+				flatIdx := -(idx + mpHitRegionOffset)
+				if flatIdx >= 0 && flatIdx < len(p.mpTree.FlatItems) {
+					p.mpTree.Cursor = flatIdx
+					p.mpOnCursorMove()
+					p.activePane = PanePreview
+				}
+				return nil
+			}
 			if idx < 0 {
 				// Double-click on shell entry (negative index: -1 -> shells[0], -2 -> shells[1], etc.)
 				shellIdx := -(idx + 1)
@@ -1038,6 +1062,14 @@ func (p *Plugin) handleMouseScroll(action mouse.MouseAction) tea.Cmd {
 
 	switch regionID {
 	case regionSidebar, regionWorktreeItem:
+		if p.viewMode == ViewModeMultiProject && p.mpTree != nil {
+			if delta < 0 {
+				p.mpTree.CursorUp()
+			} else {
+				p.mpTree.CursorDown()
+			}
+			return p.mpOnCursorMove()
+		}
 		return p.scrollSidebar(delta)
 	case regionTermPanelContent:
 		// Scroll terminal panel output directly (position-based, not focus-based)

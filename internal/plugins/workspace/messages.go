@@ -276,3 +276,11 @@ type InteractivePasteResultMsg struct {
 	Empty       bool
 	SessionDead bool
 }
+
+// --- Multi-project view messages ---
+
+// MultiProjectScanDoneMsg delivers scan results for all projects.
+type MultiProjectScanDoneMsg struct {
+	Generation int           // Scan generation (for stale detection)
+	Projects   []ProjectNode // Scanned project data
+}
